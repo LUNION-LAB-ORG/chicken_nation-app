@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "scheme": "acme",
+    "userInterfaceStyle": "automatic",
+    "orientation": "default",
+    "web": {
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./src/assets/fonts/Urbanist-Regular.ttf",
+            "./src/assets/fonts/Urbanist-Bold.ttf",
+            "./src/assets/fonts/Urbanist-Medium.ttf",
+            "./src/assets/fonts/Urbanist-Light.ttf",
+            "./src/assets/fonts/Urbanist-Regular.ttf",
+            "./src/assets/fonts/Blocklyn-Grunge.otf",
+            "./src/assets/fonts/Blocklyn-Condensed.otf",
+            "./src/assets/fonts/Sofia-Regular.ttf",
+            "./src/assets/fonts/Sofia-Medium.ttf",
+            "./src/assets/fonts/Sofia-Bold.ttf",
+            "./src/assets/fonts/Sofia-Light.ttf",
+            "./src/assets/fonts/Sofia-Regular.ttf"
+          ]
+        }
+      ]
+    ],
+    "splash": {
+      "image": "./src/assets/icons/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/icons/logo.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.chickennation.app",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_API_KEY"
+        }
+      }
+    },
+    "ios": {
+      "splash": {
+        "image": "./src/assets/icons/logo.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "name": "chicken-nation",
+    "slug": "chicken-nation",
+    "version": "1.0.0",
+    "newArchEnabled": false,
+    "extra": {
+      "eas": {
+        "projectId": "chicken-nation"
+      }
+    }
+  }
+}
