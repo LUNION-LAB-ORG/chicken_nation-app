@@ -168,7 +168,7 @@ const DynamicHeader: React.FC<DynamicHeaderProps> = ({
             </TouchableOpacity>
 
             <View style={styles.centerContent}>
-              <Text style={styles.tableText}>À table</Text>
+              <Text style={styles.tableText}>{title}</Text>
             </View>
 
             {showCart ? (

@@ -115,7 +115,7 @@ const Cart: React.FC = () => {
         setPromoDiscount(Math.min(validCode.discount, totalAmount));
       }
 
-      // Afficher la modale de succès au lieu de l'alerte
+      // Afficher la modale de succès
       setSuccessMessage(`${validCode.description}`);
       setShowSuccessModal(true);
     } else {
@@ -184,25 +184,8 @@ const Cart: React.FC = () => {
   if (items.length === 0) {
     return (
       <View className="flex-1 bg-white">
-        <StatusBar style="dark" />
-        <View className="absolute top-0 left-0 right-0 z-50">
-          <CustomStatusBar />
-        </View>
-        <View className="flex flex-row items-center justify-between mt-10 p-6">
-          <TouchableOpacity onPress={() => router.back()}>
-            <Image
-              source={require("../../../assets/icons/arrow-back.png")}
-              style={{ width: 32, height: 32, resizeMode: "contain" }}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity>
-            <Image
-              source={require("../../../assets/icons/cart.png")}
-              style={{ width: 26, height: 26, resizeMode: "contain" }}
-            />
-          </TouchableOpacity>
-        </View>
-
+      
+       
         <View className="flex-1 items-center justify-center">
           <Image
             source={require("../../../assets/icons/empty-cart.png")}
@@ -225,14 +208,20 @@ const Cart: React.FC = () => {
   // Rendu principal du panier avec des articles
   return (
     <View className="flex-1 bg-white">
-     <CustomStatusBar />
+    <StatusBar style="dark" />
+      <CustomStatusBar />
       
-      <View className= "">
-        <DynamicHeader title="Panier des commandes" displayType="back" />
+      {/* Header fixe en haut */}
+      <View className="-mt-6 z-10">
+        <DynamicHeader
+          displayType="back"
+          title="Panier des commandes"
+          showCart={true}
+        />
       </View>
 
       <ScrollView
-        className="flex-1 mt-6 px-6 sm:px-6"
+        className="flex-1 mt-4 px-6 sm:px-6"
         showsVerticalScrollIndicator={false}
       >
         {/* Liste des produits dans le panier */}

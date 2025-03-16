@@ -19,11 +19,11 @@
             "./src/assets/fonts/Urbanist-Regular.ttf",
             "./src/assets/fonts/Blocklyn-Grunge.otf",
             "./src/assets/fonts/Blocklyn-Condensed.otf",
-            "./src/assets/fonts/Sofia-Regular.ttf",
-            "./src/assets/fonts/Sofia-Medium.ttf",
-            "./src/assets/fonts/Sofia-Bold.ttf",
-            "./src/assets/fonts/Sofia-Light.ttf",
-            "./src/assets/fonts/Sofia-Regular.ttf"
+            "./src/assets/fonts/SofiaProRegular.ttf",
+            "./src/assets/fonts/SofiaProMedium.ttf",
+            "./src/assets/fonts/SofiaProBold.ttf",
+            "./src/assets/fonts/SofiaProLight.ttf",
+            "./src/assets/fonts/SofiaProSemiBold.ttf"
           ]
         }
       ]
@@ -67,8 +67,12 @@
     "newArchEnabled": false,
     "extra": {
       "eas": {
-        "projectId": "chicken-nation"
+        "projectId": "12d22b15-cc96-4f3a-82d4-219f16de9176"
+      },
+      "router": {
+        "origin": false
       }
-    }
+    },
+    "owner": "ambroisek"
   }
 }

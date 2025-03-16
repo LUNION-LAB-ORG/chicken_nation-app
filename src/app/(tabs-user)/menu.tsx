@@ -120,18 +120,18 @@ const Menu: React.FC = () => {
   };
 
   return (
-    <View className="flex-1 bg-white">
-      <View className="absolute top-0 left-0 right-0 z-50">
-        <CustomStatusBar />
-      </View>
-
-      <Animated.View className="py-2 pb-4 mt-12 px-4" style={headerStyle}>
+    <View className="flex-1 relative bg-white">
+      <StatusBar style="dark" />
+      <CustomStatusBar />
+      
+      {/* Header fixe en haut */}
+      <View className="px-4 z-10">
         <DynamicHeader
-          displayType="logo"
-          title={isTakeawayActive ? "A emporter" : "Menu"}
-          showCart
+          displayType={isDeliveryActive ? "table" : (isTakeawayActive ? "table" : "logo")}
+          title={isDeliveryActive ? "Je veux manger" : (isTakeawayActive ? "A emporter" : "Menu")}
+          showCart={true}
         />
-      </Animated.View>
+      </View>
 
       <AnimatedScrollView
         showsVerticalScrollIndicator={false}

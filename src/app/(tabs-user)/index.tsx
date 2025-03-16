@@ -51,14 +51,17 @@ const Home: React.FC = () => {
   }));
 
   return (
-    <View className="flex-1 relative bg-white">
-      {/* Barre d'état personnalisée avec logo */}
+    <View className="flex-1 bg-white">
       <StatusBar style="dark" />
       <CustomStatusBar />
       
-      <Animated.View className="px-4 -mt-2" style={headerStyle}>
-        <DynamicHeader displayType="logo" showCart={true} />
-      </Animated.View>
+      {/* Header fixe en haut */}
+      <View className="px-4 z-10">
+        <DynamicHeader
+          displayType="logo"
+          showCart={true}
+        />
+      </View>
 
       <AnimatedScrollView
         showsVerticalScrollIndicator={false}

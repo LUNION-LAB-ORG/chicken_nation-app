@@ -7,60 +7,36 @@ import {
   FlatList,
 } from "react-native";
 import React from "react";
+import { useRouter } from "expo-router";
+import { menuItems, categories } from "@/data/MockedData";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = Math.floor((width - 40) / 2); 
 
 const ProductCard = () => {
-  const data = [
-    {
-      id: "1",
-      name: "Chicken Nation",
-      promo: "Chicken Promo",
-      price: 10000,
-      image: require("../../assets/images/chicken-big-promo.png"),
-    },
-    {
-      id: "2",
-      name: "Méchant Méchant",
-      promo: "Burgers",
-      price: 10000,
-      image: require("../../assets/images/mechant-mechant.png"),
-    },
-    {
-      id: "3",
-      name: "Mix Epice",
-      promo: "Poulets",
-      price: 10000,
-      image: require("../../assets/images/mix.png"),
-    },
-    {
-      id: "4",
-      name: "Brownie",
-      promo: "Desserts",
-      price: 10000,
-      image: require("../../assets/images/brownie.png"),
-    },
-    {
-      id: "5",
-      name: "Fitini",
-      promo: "Sandwichs",
-      price: 10000,
-      image: require("../../assets/images/fitini.png"),
-    },
-    {
-      id: "6",
-      name: "Lunchs",
-      promo: "Mix Epice",
-      price: 10000,
-      image: require("../../assets/images/lunch.png"),
-    },
-  ];
+  const router = useRouter();
+  
+  // Utiliser les données de MockedData.ts
+  const data = menuItems.slice(0, 6).map(item => {
+    const category = categories.find(cat => cat.id === item.categoryId);
+    return {
+      id: item.id,
+      name: item.name,
+      promo: category?.promo || "Promo",
+      price: parseInt(item.price),
+      image: item.image,
+    };
+  });
+
+  const handleProductPress = (productId) => {
+    router.push(`/(common)/products/${productId}`);
+  };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={{ width: CARD_WIDTH }}
-      className="bg-white rounded-xl border border-slate-100 p-2 mb-4"
+      className="bg-white rounded-xl border border-slate-100 p-2 mb-4 shadow-sm"
+      onPress={() => handleProductPress(item.id)}
     >
       <View className="relative">
         <Image
@@ -71,15 +47,31 @@ const ProductCard = () => {
             resizeMode: "contain",
           }}
         />
-        <View className="absolute top-3 left-3 bg-yellow px-3 py-2 rounded-xl">
-          <Text className="text-xs font-sofia-bold text-gray-800">
+        <View className="absolute top-3 left-3 bg-orange-50 px-3 py-2 rounded-xl">
+          <Text className="text-xs font-urbanist-medium text-orange-500">
             {item.promo}
           </Text>
         </View>
       </View>
-      <Text className="mt-2 ml-2 text-sm font-sofia-regular text-slate-600">
-        {item.name}
-      </Text>
+      <View className="px-2 py-2">
+        <Text className="text-sm font-urbanist-medium text-primary">
+          {item.name}
+        </Text>
+        <View className="flex-row justify-between items-center mt-1">
+          <Text className="text-sm font-urbanist-bold text-orange-500">
+            {item.price} FCFA
+          </Text>
+          <TouchableOpacity 
+            className="bg-orange-500 rounded-full p-1"
+            onPress={() => handleProductPress(item.id)}
+          >
+            <Image
+              source={require("../../assets/icons/plus-white.png")}
+              style={{ width: 16, height: 16, resizeMode: "contain" }}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 
