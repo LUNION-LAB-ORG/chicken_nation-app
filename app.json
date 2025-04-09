@@ -66,11 +66,11 @@
     "version": "1.0.0",
     "newArchEnabled": false,
     "extra": {
-      "eas": {
-        "projectId": "12d22b15-cc96-4f3a-82d4-219f16de9176"
-      },
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "12d22b15-cc96-4f3a-82d4-219f16de9176"
       }
     },
     "owner": "ambroisek"

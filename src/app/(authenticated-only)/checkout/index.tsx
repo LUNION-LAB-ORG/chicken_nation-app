@@ -235,7 +235,7 @@ const Checkout = () => {
           finalTotal={finalTotal}
           selectedPayment={selectedPayment}
           onViewOrders={() => router.push("/(authenticated-only)/orders")}
-          onViewReceipt={() => router.push("/(authenticated-only)/receipt")}
+          onViewReceipt={() => router.push("/(authenticated-only)/orders")}
         />
       )}
 

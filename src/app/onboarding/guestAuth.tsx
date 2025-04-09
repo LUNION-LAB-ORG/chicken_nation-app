@@ -84,7 +84,7 @@ const GuestAuth: React.FC = () => {
    */
   const handleGoogleAuth = (): void => {
     startAuthFlow();
-    router.push("/(auth)/google");
+ 
   };
 
   /**
@@ -92,7 +92,7 @@ const GuestAuth: React.FC = () => {
    */
   const handleFacebookAuth = (): void => {
     startAuthFlow();
-    router.push("/(auth)/facebook");
+   
   };
 
   return (
