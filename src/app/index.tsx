@@ -10,32 +10,44 @@ import Spinner from "@/components/ui/Spinner";
 
 export default function Index() {
   const router = useRouter();
-  const { currentScreen, showOnboarding, isAuthFlow } = useOnboarding();
-  const { user } = useAuth();
+  const { currentScreen, showOnboarding, isAuthFlow, isFirstLaunch } = useOnboarding();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
-  // Effet pour gérer les redirections
+  // Effet principal pour la navigation
   useEffect(() => {
-    // Ne rien faire si on est en train de gérer l'authentification
-    if (isAuthFlow) {
+    console.log("[Index] isLoading:", isLoading, ", isAuthenticated:", isAuthenticated, ", showOnboarding:", showOnboarding, ", isFirstLaunch:", isFirstLaunch);
+    
+    // Ne pas rediriger pendant le chargement
+    if (isLoading) {
+      console.log("[Index] Chargement en cours, attente...");
       return;
     }
-
-    // Ne rien faire si on doit montrer l'onboarding
-    if (showOnboarding) {
+    
+    // Priorité 1: Si c'est le premier lancement et qu'on doit montrer l'onboarding
+    if (isFirstLaunch && showOnboarding && currentScreen) {
+      console.log("[Index] Premier lancement, affichage de l'onboarding:", currentScreen);
+      // Laisser l'onboarding s'afficher sans redirection
       return;
     }
-
-    // Attendre que l'état d'authentification soit initialisé
-    if (user === undefined) {
+    
+    // Priorité 2: Si l'utilisateur est authentifié, aller aux tabs utilisateur
+    if (isAuthenticated && user) {
+      console.log("[Index] Utilisateur authentifié, redirection vers /(tabs-user)/");
+      router.replace("/(tabs-user)/");
       return;
     }
-
-    // Rediriger vers les tabs appropriés
-    router.replace(user ? "/(tabs-user)/" : "/(tabs-guest)/");
-  }, [showOnboarding, user, isAuthFlow, router]);
+    
+    // Priorité 3: Si l'utilisateur n'est pas authentifié et qu'on n'est pas dans le flow d'auth
+    if (!isAuthenticated && !isAuthFlow && !isLoading) {
+      console.log("[Index] Utilisateur non authentifié, redirection vers /onboarding/guestAuth");
+      router.replace("/onboarding/guestAuth");
+      return;
+    }
+  }, [isAuthenticated, isLoading, showOnboarding, currentScreen, isFirstLaunch, isAuthFlow, user, router]);
 
   // Afficher l'écran d'onboarding approprié si nécessaire
-  if (showOnboarding && !isAuthFlow) {
+  if (showOnboarding && !isAuthFlow && currentScreen) {
+    console.log("[Index] Affichage de l'écran d'onboarding:", currentScreen);
     return (
       <View style={StyleSheet.absoluteFill}>
         {currentScreen === "splash" && <Splash />}
@@ -48,7 +60,7 @@ export default function Index() {
   // Afficher un écran de chargement en attendant la redirection
   return (
     <View style={styles.container}>
-      <Spinner />
+      <ActivityIndicator size="large" color="#F17922" />
     </View>
   );
 }

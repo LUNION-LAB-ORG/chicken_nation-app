@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Image, Alert } from "react-native";
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -7,67 +7,105 @@ import { useRouter } from "expo-router";
 import GradientText from "@/components/ui/GradientText";
 import GradientButton from "@/components/ui/GradientButton";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
+import { loginCustomer } from "@/services/api/auth";
 
 /**
  * Interface pour l'état du formulaire d'authentification
  */
 interface AuthState {
-  email: string;
+  phone: string;
   isFocused: boolean;
   isLoading: boolean;
   error?: string;
 }
 
 /**
- * Écran d'authentification par email ou téléphone
- * Permet à l'utilisateur de se connecter ou s'inscrire avec un email ou numéro de téléphone
+ * Écran d'authentification par téléphone
+ * Permet à l'utilisateur de se connecter ou s'inscrire avec un numéro de téléphone
  */
-const AuthWithEmail: React.FC = () => {
+const AuthWithPhone: React.FC = () => {
   const { endAuthFlow, completeOnboarding } = useOnboarding();
   const router = useRouter();
 
   // État pour gérer le formulaire d'authentification
   const [state, setState] = useState<AuthState>({
-    email: "",
+    phone: "",
     isFocused: false,
     isLoading: false,
     error: undefined,
   });
 
   /**
-   * Gère les changements de valeur de l'input email/téléphone
- 
+   * Formatage du numéro de téléphone
+   * @param phone Numéro de téléphone à formatter
+   * @returns Numéro de téléphone formaté
+   */
+  const formatPhoneNumber = (phone: string): string => {
+    // Enlever tous les caractères non numériques
+    const cleaned = phone.replace(/\D/g, '');
+    
+    // S'assurer que le numéro commence par +225
+    if (cleaned.startsWith('0')) {
+      return '+225' + cleaned.substring(1);
+    } else if (!cleaned.startsWith('225')) {
+      return '+225' + cleaned;
+    }
+    return '+' + cleaned;
+  };
+
+  /**
+   * Gère les changements de valeur de l'input téléphone
    */
   const handleInputChange = (text: string): void => {
     setState((prev) => ({
       ...prev,
-      email: text,
+      phone: text,
       error: undefined,
     }));
   };
 
   /**
    * Gère la soumission du formulaire de connexion
-   * Valide l'email ou le téléphone et redirige vers l'écran de code OTP
+   * Valide le téléphone et redirige vers l'écran de code OTP
    */
   const handleLogin = async (): Promise<void> => {
     try {
       setState((prev) => ({ ...prev, isLoading: true, error: undefined }));
-
-      // Validation basique de l'email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const phoneRegex = /^[\d\s+()-]{10,}$/;
-
-      if (!emailRegex.test(state.email) && !phoneRegex.test(state.email)) {
-        throw new Error("Format email ou téléphone invalide");
+      
+      // Valider le format du numéro de téléphone (8 chiffres pour la Côte d'Ivoire)
+      const phoneRegex = /^[0-9+\s()-]{8,}$/;
+      if (!phoneRegex.test(state.phone)) {
+        throw new Error("Format téléphone invalide");
       }
 
-      router.push("/otp");
+      // Formater le numéro de téléphone au format local (ex: 0101010101)
+      const localPhone = state.phone.replace(/\D/g, '').replace(/^225/, '');
+      console.log('Sending login request for phone:', localPhone);
+
+      // Demander un code OTP et vérifier si l'utilisateur existe
+      const response = await loginCustomer(localPhone);
+      console.log('Login response:', response);
+      
+      // Afficher l'OTP dans la console (pour le développement)
+      if (response.otp) {
+        console.log('OTP Code (Dev Only):', response.otp);
+      } else {
+        console.warn('No OTP received from API');
+      }
+      
+      // Rediriger vers la page OTP en passant le numéro local
+      router.push({
+        pathname: "/(auth)/otp",
+        params: { 
+          phone: localPhone,
+          userExists: response.exists ? "true" : "false"
+        }
+      });
     } catch (error) {
+      console.error('Error in handleLogin:', error);
       setState((prev) => ({
         ...prev,
-        error:
-          error instanceof Error ? error.message : "Une erreur est survenue",
+        error: error instanceof Error ? error.message : "Erreur inconnue",
       }));
     } finally {
       setState((prev) => ({ ...prev, isLoading: false }));
@@ -100,13 +138,13 @@ const AuthWithEmail: React.FC = () => {
           }`}
         >
           <TextInput
-            placeholder="Email ou numéro de téléphone"
+            placeholder="Numéro de téléphone (ex: 0707070707)"
             onFocus={() => setState((prev) => ({ ...prev, isFocused: true }))}
             onBlur={() => setState((prev) => ({ ...prev, isFocused: false }))}
             onChangeText={handleInputChange}
-            value={state.email}
+            value={state.phone}
             className="font-urbanist-medium"
-            keyboardType="email-address"
+            keyboardType="phone-pad"
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -121,34 +159,11 @@ const AuthWithEmail: React.FC = () => {
         <GradientButton
           onPress={handleLogin}
           className="w-full mt-6"
-          disabled={state.isLoading}
+          disabled={state.isLoading || !state.phone.trim()}
         >
           {state.isLoading ? "Chargement..." : "Connexion"}
         </GradientButton>
-
-        <View className="p-5 mt-10 w-full rounded-3xl bg-slate-50">
-          <Text className="font-urbanist-medium text-center">
-            Ou continue avec
-          </Text>
-        </View>
       </View>
-
-      <TouchableOpacity className="p-5   w-full rounded-3xl flex-row items-center justify-center bg-slate-50">
-        <Image
-          source={require("../../../assets/icons/google.png")}
-          style={{ width: 29, height: 29, resizeMode: "contain" }}
-        />
-        <Text className=" ml-2 font-urbanist-medium text-center">Google</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity className="p-5 mt-4 w-full rounded-3xl flex-row items-center justify-center bg-slate-50">
-        <Image
-          source={require("../../../assets/icons/facebook.png")}
-          style={{ width: 29, height: 29, resizeMode: "contain" }}
-        />
-        <Text className=" ml-2 font-urbanist-medium text-center">Facebook</Text>
-      </TouchableOpacity>
-
       <TouchableOpacity
         onPress={handleSkip}
         className="items-center justify-center"
@@ -166,4 +181,4 @@ const AuthWithEmail: React.FC = () => {
   );
 };
 
-export default AuthWithEmail;
+export default AuthWithPhone;

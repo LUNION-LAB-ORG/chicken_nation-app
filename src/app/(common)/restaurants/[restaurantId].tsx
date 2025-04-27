@@ -1,34 +1,81 @@
-import { View, Text, Image, TouchableOpacity } from "react-native";
-import React from "react";
+import { View, Text, Image, TouchableOpacity, ActivityIndicator } from "react-native";
+import React, { useEffect, useState } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { restaurants } from "@/data/MockedData";
+import { Restaurant } from "@/types";
+import { getRestaurantById } from "@/services/restaurantService";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import BackButtonTwo from "@/components/ui/BackButtonTwo";
 import GradientButton from "@/components/ui/GradientButton";
 import { StatusBar } from "expo-status-bar";
- 
+
 const RestaurantDetails: React.FC = () => {
   const router = useRouter();
- 
   const { restaurantId } = useLocalSearchParams<{ restaurantId: string }>();
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Trouver le restaurant correspondant dans les données
-  const restaurant = restaurants.find((r) => r.id === restaurantId);
+  useEffect(() => {
+    const fetchRestaurant = async () => {
+      if (!restaurantId) {
+        setError("ID du restaurant manquant");
+        setLoading(false);
+        return;
+      }
 
-  // Afficher un message si le restaurant n'est pas trouvé
-  if (!restaurant) {
-    return <Text>Restaurant non trouver</Text>;
-  }
+      try {
+        setLoading(true);
+        const data = await getRestaurantById(restaurantId);
+        setRestaurant(data);
+        setError(null);
+      } catch (err) {
+        console.error(`Erreur lors du chargement du restaurant ${restaurantId}:`, err);
+        setError("Impossible de charger les détails du restaurant");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRestaurant();
+  }, [restaurantId]);
 
   /**
    * Redirige vers le menu du restaurant sélectionné
    */
   const handleMenuClick = (): void => {
-    router.push({
-      pathname: "/(tabs-guest)/menu",
-      params: { restaurantId: restaurant.id },
-    });
+    if (restaurant) {
+      router.push({
+        pathname: "/(tabs-guest)/menu",
+        params: { restaurantId: restaurant.id },
+      });
+    }
   };
+
+  if (loading) {
+    return (
+      <View className="flex-1 bg-white justify-center items-center">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <ActivityIndicator size="large" color="#FF9F0D" />
+      </View>
+    );
+  }
+
+  if (error || !restaurant) {
+    return (
+      <View className="flex-1 bg-white justify-center items-center px-6">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <Text className="text-red-500 text-center">{error || "Restaurant non trouvé"}</Text>
+        <TouchableOpacity 
+          className="mt-4 bg-orange-500 py-2 px-4 rounded-lg"
+          onPress={() => router.back()}
+        >
+          <Text className="text-white">Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-white">

@@ -1,5 +1,5 @@
-import { View, Text, TouchableOpacity, Image } from "react-native";
-import React, { useState } from "react";
+import { View, Text, TouchableOpacity, Image, Alert } from "react-native";
+import React, { useState, useEffect } from "react";
 import { useOnboarding } from "../../context/OnboardingContext";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -9,28 +9,55 @@ import BackButton from "@/components/ui/BackButton";
 import GradientButton from "@/components/ui/GradientButton";
 import LoadingModal from "@/components/ui/LoadingModal";
 import Spinner from "@/components/ui/Spinner";
+import ErrorModal from "@/components/ui/ErrorModal";
+import { verifyOTP, requestOTP } from "@/services/api/auth"; 
+import { useLocalSearchParams } from "expo-router";
+import { useAuth } from "@/app/context/AuthContext";
+import { setAuthToken } from "@/services/api/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { isProfileComplete } from "@/utils/profile";
 
 // Interface pour gérer l'état local
 interface OTPState {
   code: string;
   isVerifying: boolean;
   error?: string;
+  resendTimer: number;
+  isResending: boolean;
 }
 
 // Type pour les touches du clavier
 type KeypadKey = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 const OTP: React.FC = () => {
-  const { endAuthFlow, completeOnboarding } = useOnboarding();
+  const { phone } = useLocalSearchParams<{ 
+    phone: string; 
+  }>();
+  const { completeOnboarding } = useOnboarding();
+  const { login } = useAuth();
   const router = useRouter();
-
+ 
   const [state, setState] = useState<OTPState>({
     code: "",
     isVerifying: false,
     error: undefined,
+    resendTimer: 30,
+    isResending: false,
   });
 
-  // Gestionnaire pour l'ajout d'un chiffre
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  // Gestion du timer pour le renvoi du code
+  useEffect(() => {
+    if (state.resendTimer > 0) {
+      const timer = setTimeout(() => {
+        setState(prev => ({ ...prev, resendTimer: prev.resendTimer - 1 }));
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.resendTimer]);
+ 
   const handleNumberPress = (num: KeypadKey): void => {
     if (state.code.length < 4) {
       setState((prev) => {
@@ -59,28 +86,96 @@ const OTP: React.FC = () => {
     }));
   };
 
+  // Fonction pour renvoyer le code OTP
+  const handleResendOTP = async (): Promise<void> => {
+    if (state.resendTimer > 0 || state.isResending) return;
+    
+    try {
+      setState(prev => ({ ...prev, isResending: true, error: undefined }));
+      
+      if (!phone) throw new Error("Numéro de téléphone manquant");
+      
+      await requestOTP(phone as string);
+      
+      setState(prev => ({
+        ...prev,
+        resendTimer: 30,
+        isResending: false,
+      }));
+      
+      Alert.alert("Succès", "Un nouveau code OTP a été envoyé à votre numéro");
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        isResending: false,
+        error: error instanceof Error ? error.message : "Erreur lors de l'envoi du code",
+      }));
+    }
+  };
+
   // Fonction de validation du code OTP
   const handleValidateOTP = async (codeToValidate: string): Promise<void> => {
     try {
       setState((prev) => ({ ...prev, isVerifying: true, error: undefined }));
+      
+      if (!phone) throw new Error("Numéro de téléphone manquant");
 
-      // Simuler une vérification API
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const localPhone = (typeof phone === 'string') ? phone.replace(/\D/g, '').replace(/^225/, '') : '';
 
-      // TODO: Ajouter la vraie validation API ici
-      if (codeToValidate === "0000") {
-        throw new Error("Code OTP invalide");
+      const payload = {
+        otp: codeToValidate,
+        phone: localPhone,
+      };
+      console.log('Sending OTP verification with payload:', payload);
+
+      // Appel à l'API pour vérifier le code OTP
+      const response = await verifyOTP(payload);
+      
+      console.log('OTP verification successful:', response);
+      
+      // Vérifier que nous avons bien reçu les tokens
+      if (!response.token || !response.refreshToken) {
+        throw new Error("Tokens d'authentification manquants dans la réponse");
       }
+      
+      // Utiliser le nouveau contexte d'authentification pour stocker les informations utilisateur
+      await login(
+        {
+          id: response.id,
+          first_name: response.first_name,
+          last_name: response.last_name,
+          birth_day: response.birth_day,
+          email: response.email,
+          image: response.image,
+          created_at: response.created_at,
+          updated_at: response.updated_at
+        },
+        response.token,
+        response.refreshToken
+      );
+      
+      console.log('User logged in successfully');
+      
+      // Vérifier si l'utilisateur existe déjà ou s'il faut compléter son profil
+      const profileComplete = isProfileComplete(response);
 
-      // Redirection vers ThankForJoint au lieu de terminer le flow
-      router.push("/thankforjoint");
+      if (profileComplete) {
+        // Compte complet, accès direct à l'app
+        router.replace("/(tabs-user)/");
+      } else {
+        // Compte incomplet (nouvel inscrit ou profil à compléter)
+        router.replace("/(auth)/create-account/");
+      }
     } catch (error) {
+      // console.error('OTP validation error:', error); // Retiré à la demande de l'utilisateur
+      const message = error instanceof Error ? error.message : "Code OTP invalide";
       setState((prev) => ({
         ...prev,
-        error:
-          error instanceof Error ? error.message : "Une erreur est survenue",
-        code: "", // Reset du code en cas d'erreur
+        error: message,
+        code: "",
       }));
+      setErrorMessage(message);
+      setShowErrorModal(true);
     } finally {
       setState((prev) => ({ ...prev, isVerifying: false }));
     }
@@ -131,7 +226,7 @@ const OTP: React.FC = () => {
           </GradientText>
           <Text className="text-base font-sofia-light text-start text-[#595959] mt-6">
             Veuillez saisir le code de vérification envoyé à votre numéro de
-            téléphone
+            téléphone {phone && `(${phone})`}
           </Text>
 
           {/* Cases OTP */}
@@ -150,7 +245,15 @@ const OTP: React.FC = () => {
           <View className="items-center justify-center mt-6">
             <Text className="text-base font-sofia-light text-[#424242] mt-6">
               Je ne reçois pas de code !{" "}
-              <Text className="text-orange-500">Renvoyer</Text>
+              {state.resendTimer > 0 ? (
+                <Text className="text-orange-500">({state.resendTimer}s)</Text>
+              ) : (
+                <TouchableOpacity onPress={handleResendOTP} disabled={state.isResending}>
+                  <Text className="text-orange-500">
+                    {state.isResending ? "Envoi en cours..." : "Renvoyer"}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </Text>
           </View>
 
@@ -202,16 +305,21 @@ const OTP: React.FC = () => {
       </View>
       {/* Loading Modal */}
       <LoadingModal visible={state.isVerifying} />
-      {state.isVerifying && (
+      {state.isVerifying && ( 
         <View className="absolute inset-0 bg-black/50 justify-end">
           <View className="bg-white rounded-t-3xl p-6 items-center space-y-4">
             <Spinner size={64} />
             <Text className="font-urbanist-medium text-base text-gray-700">
-              Vérification en cours
+              Vérification en cours...
             </Text>
           </View>
         </View>
       )}
+      <ErrorModal
+        visible={showErrorModal}
+        message={errorMessage}
+        onClose={() => setShowErrorModal(false)}
+      />
     </View>
   );
 };

@@ -15,6 +15,8 @@ import BackButtonTwo from "@/components/ui/BackButtonTwo";
 import { useLocation } from "../../context/LocationContext";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import Spinner from "@/components/ui/Spinner"; 
+import { addUserAddress, Address } from "@/services/api/address";
+import { useAuth } from "@/app/context/AuthContext";
 
 // Structure des coordonnées géographiques
 interface Coordinates {
@@ -168,24 +170,44 @@ const Location: React.FC = () => {
     }
   };
 
-  // Sauvegarde finale de l'adresse avec son titre
+  // Sauvegarde de l'adresse avec titre
   const handleSaveAddress = async () => {
     if (!tempLocationData) return;
     
     try {
-      await setCoordinates(tempLocationData.coordinates);
-      await setLocationType("auto");
-      await setAddressDetails({
-        formattedAddress: tempLocationData.formattedAddress,
+      // Préparer les données d'adresse pour le backend
+      const addressData: Address = {
         title: addressTitle,
-      });
+        address: tempLocationData.formattedAddress || "Adresse sélectionnée",
+        street: tempLocationData.street || "",
+        city: tempLocationData.city || "Abidjan",
+        longitude: currentLocation?.longitude || 0,
+        latitude: currentLocation?.latitude || 0
+      };
+
+      // Enregistrer l'adresse dans le backend
+      const savedAddress = await addUserAddress(addressData);
       
-      setShowTitleModal(false);
-      setAddressTitle("");
-      router.back();
+      if (savedAddress) {
+        // Mettre à jour le contexte de localisation
+        await setLocationType("manual");
+        await setAddressDetails({
+          ...tempLocationData,
+          title: addressTitle
+        });
+        
+        setShowTitleModal(false);
+        router.back();
+      } else {
+        throw new Error("Échec de l'enregistrement de l'adresse");
+      }
     } catch (error) {
-      console.error("Erreur lors de l'enregistrement:", error);
-      Alert.alert("Erreur", "Impossible d'enregistrer l'adresse.");
+      console.error("Erreur lors de l'enregistrement de l'adresse:", error);
+      Alert.alert(
+        "Erreur",
+        "Une erreur est survenue lors de l'enregistrement de l'adresse",
+        [{ text: "OK" }]
+      );
     }
   };
 

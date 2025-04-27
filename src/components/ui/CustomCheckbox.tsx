@@ -1,34 +1,44 @@
 import React from "react";
 import { TouchableOpacity, View, Text } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 /**
  * Props du composant CustomCheckbox
  */
 interface CustomCheckboxProps {
   /** État du checkbox (coché ou non) */
-  value: boolean;
+  isChecked?: boolean;
   /** Fonction appelée lorsque l'état change */
-  onValueChange: () => void;
-  /** Texte à afficher à côté du checkbox */
-  label: string;
+  onPress: () => void;
+  /** Texte à afficher à côté du checkbox (optionnel) */
+  label?: string;
 }
  
 const CustomCheckbox: React.FC<CustomCheckboxProps> = ({
-  value,
-  onValueChange,
+  isChecked = false,
+  onPress,
   label,
 }) => (
   <TouchableOpacity
-    onPress={onValueChange}
-    className="flex-row items-center justify-between mt-2"
+    onPress={onPress}
+    className="flex-row items-center"
   >
-    <Text className="text-lg font-sofia-light text-black/70">{label}</Text>
-    <View
-      className={`w-6 h-6 border rounded mr-2 items-center justify-center ${value ? "bg-orange-500 border-orange-500" : "border-gray-400 bg-white"}`}
-    >
-      {value && <FontAwesome name="check" size={14} color="white" />}
-    </View>
+    {label && <Text className="text-lg font-sofia-light text-black/70 mr-2">{label}</Text>}
+    {isChecked ? (
+      <LinearGradient
+        colors={["#F17922", "#FA6345"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        className="w-6 h-6 rounded-md items-center justify-center"
+      >
+        <FontAwesome name="check" size={14} color="white" />
+      </LinearGradient>
+    ) : (
+      <View
+        className="w-6 h-6 border rounded-md border-gray-400 bg-white items-center justify-center"
+      />
+    )}
   </TouchableOpacity>
 );
 

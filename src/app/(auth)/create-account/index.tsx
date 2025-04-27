@@ -1,0 +1,470 @@
+import { View, Text, TextInput, TouchableOpacity, Image, ScrollView, Alert, Modal, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import CustomStatusBar from '@/components/ui/CustomStatusBar';
+import { StatusBar } from 'expo-status-bar';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import GradientButton from '@/components/ui/GradientButton';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { updateCustomer, getCustomerDetails } from '@/services/api/customer';
+import { format } from 'date-fns';
+import LoadingModal from '@/components/ui/LoadingModal';
+import { useAuth } from '@/app/context/AuthContext';
+import { useOnboarding } from '@/app/context/OnboardingContext';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setAuthToken } from '@/services/api/api';
+import * as FileSystem from 'expo-file-system';
+import { api } from '@/services/api/api';
+import ErrorModal from '@/components/ui/ErrorModal';
+import { formatImageUrl } from '@/utils/imageHelpers';
+
+interface UserFormData {
+  lastName: string;
+  firstName: string;
+  birthDate: Date | null;
+  email: string;
+  image?: string;
+}
+
+const CreateAccount = () => {
+  const router = useRouter();
+  const { phone, apiPhone } = useLocalSearchParams<{ phone: string; apiPhone: string }>();
+  const { accessToken, updateUserData } = useAuth();
+  const { completeOnboarding } = useOnboarding();
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  
+  const [formData, setFormData] = useState<UserFormData>({
+    lastName: '',
+    firstName: '',
+    birthDate: null,
+    email: '',
+    image: '', // URL d'image par défaut
+  });
+
+  const handleInputChange = (field: keyof UserFormData, value: string | Date) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      handleInputChange('birthDate', selectedDate);
+    }
+  };
+
+  const formatDate = (date: Date | null): string => {
+    if (!date) return '';
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission refusée', 'Nous avons besoin de votre permission pour accéder à la caméra');
+        return;
+      }
+      
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        handleInputChange('image', result.assets[0].uri);
+      }
+      
+      setShowImageModal(false);
+    } catch (error) {
+      console.error('Erreur lors de la prise de photo:', error);
+      Alert.alert('Erreur', 'Impossible de prendre une photo');
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission refusée', 'Nous avons besoin de votre permission pour accéder à la galerie');
+        return;
+      }
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        handleInputChange('image', result.assets[0].uri);
+      }
+      
+      setShowImageModal(false);
+    } catch (error) {
+      console.error('Erreur lors de la sélection d\'image:', error);
+      Alert.alert('Erreur', 'Impossible de sélectionner une image');
+    }
+  };
+
+  const handleContinue = async () => {
+    try {
+      setIsLoading(true);
+      
+      // 1. Validation des champs obligatoires
+      if (!formData.firstName || !formData.lastName || !formData.birthDate) {
+        setErrorMessage('Veuillez remplir tous les champs obligatoires');
+        setShowErrorModal(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // 2. Vérification du token d'authentification
+      const token = accessToken;
+      if (!token) {
+        setErrorMessage('Vous n\'êtes pas authentifié');
+        setShowErrorModal(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // 3. Préparation des données du formulaire (FormData)
+      const formDataToSend = new FormData();
+      
+      // Ajouter les champs de base
+      formDataToSend.append('first_name', formData.firstName);
+      formDataToSend.append('last_name', formData.lastName);
+      
+      // Ajouter la date de naissance formatée
+      if (formData.birthDate) {
+        const formattedBirthDay = format(formData.birthDate, 'dd/MM/yyyy');
+        formDataToSend.append('birth_day', formattedBirthDay);
+      }
+      
+      // Ajouter l'email s'il est présent
+      if (formData.email) {
+        formDataToSend.append('email', formData.email);
+      }
+      
+      // Vérifier si le FormData contient des données à envoyer
+      let hasData = false;
+      let hasNewImage = false;
+      
+      // @ts-ignore
+      for (let [key, value] of formDataToSend._parts || []) {
+        hasData = true;
+        break;
+      }
+      
+      // 4. Ajouter l'image si présente
+      if (formData.image) {
+        // Extraire le nom du fichier de l'URI
+        const uriParts = formData.image.split('/');
+        const fileName = uriParts[uriParts.length - 1];
+        
+        // Déterminer le type MIME
+        const fileType = fileName.split('.').pop()?.toLowerCase() === 'png' 
+          ? 'image/png' 
+          : 'image/jpeg';
+        
+        // Ajouter l'image au FormData
+        formDataToSend.append('image', {
+          uri: formData.image,
+          name: fileName,
+          type: fileType,
+        } as any);
+        
+        hasNewImage = true;
+        hasData = true;
+      }
+      
+      if (!hasData) {
+        setErrorMessage("Aucune modification à enregistrer");
+        setShowErrorModal(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // 5. Envoi des données au serveur
+      console.log('Envoi de la mise à jour du profil avec FormData');
+      
+      // Afficher le contenu du FormData pour débogage
+      console.log('FormData contenu:');
+      // @ts-ignore
+      for (let [key, value] of formDataToSend._parts || []) {
+        if (key === 'image') {
+          console.log('- image:', value.name, value.type);
+        } else {
+          console.log(`- ${key}:`, value);
+        }
+      }
+      
+      const response = await api.patch('/v1/customer', formDataToSend, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 30000, // 30 secondes
+      });
+      
+      console.log('Réponse de mise à jour du profil:', response.data);
+      
+      // Déterminer l'URL de l'image à utiliser
+      let imageUrl = null;
+      
+      // 1. Utiliser l'image de la réponse API si disponible
+      if (response.data && response.data.image) {
+        imageUrl = formatImageUrl(response.data.image);
+        console.log('Image mise à jour depuis la réponse API:', imageUrl);
+      } 
+      // 2. Sinon, si une nouvelle image a été sélectionnée, l'utiliser
+      else if (hasNewImage && formData.image) {
+        imageUrl = formData.image; // Les images locales n'ont pas besoin d'être formatées
+        console.log('Utilisation de la nouvelle image locale:', imageUrl);
+      }
+      
+      // 6. Mise à jour des données utilisateur locales
+      const updatedUserData = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        birth_day: formData.birthDate ? format(formData.birthDate, 'dd/MM/yyyy') : null,
+        email: formData.email || null,
+        phone: apiPhone, // Conserver le numéro de téléphone actuel
+        image: imageUrl,
+      };
+      
+      // Mettre à jour le contexte d'authentification
+      updateUserData(updatedUserData);
+      
+      setSuccessMessage("Profil créé avec succès !");
+      
+      // Recharger les données utilisateur depuis l'API pour s'assurer d'avoir les données les plus récentes
+      try {
+        const freshUserData = await getCustomerDetails();
+        if (freshUserData) {
+          updateUserData(freshUserData);
+          console.log('Données utilisateur rechargées depuis l\'API');
+        }
+      } catch (refreshError) {
+        console.error('Erreur lors du rechargement des données utilisateur:', refreshError);
+      }
+      
+      // 7. Finalisation du processus d'onboarding
+      completeOnboarding();
+      
+      // 8. Redirection vers l'application principale
+      router.replace('/(tabs-user)/');
+    } catch (error: any) {
+      console.error('Erreur lors de la mise à jour du profil:', error);
+      
+      // Afficher plus de détails sur l'erreur
+      if (error.response) {
+        console.error('Détails de l\'erreur:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      }
+      
+      setErrorMessage(error.message || "Erreur lors de la mise à jour du profil");
+      setShowErrorModal(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    router.back();
+  };
+
+  return (
+    <View className='flex-1 bg-white p-6 relative'>
+      <StatusBar style="dark" />  
+      <View className="absolute top-0 left-0 right-0">
+        <CustomStatusBar /> 
+      </View>
+      
+      {/* Header avec bouton retour */}
+      <View className="flex-row items-center mt-10 mb-6">
+        <TouchableOpacity onPress={handleBack} className="pr-4">
+          <Feather name="arrow-left" size={24} color="#F97316" />
+        </TouchableOpacity>
+        <Text className="text-center flex-1 text-xl font-urbanist-bold text-orange-500">Création du compte</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} className="flex-1">
+        {/* Avatar placeholder */}
+        <View className="items-center justify-center mb-8">
+          <View className="w-24 h-24 rounded-full items-center justify-center">
+            {formData.image ? (
+              <Image 
+                source={{ uri: formData.image }} 
+                className="w-24 h-24 rounded-full" 
+              />
+            ) : (
+              <Image  
+                source={require('@/assets/icons/people.png')} 
+                className="w-24 h-24" 
+                style={{ tintColor: '#FFDFC8' }}
+              />
+            )}
+          </View>
+          <TouchableOpacity 
+            onPress={() => setShowImageModal(true)}
+            className="absolute bottom-0 right-44 bg-orange-500 p-1.5 rounded-full"
+          >
+            <Feather name="camera" size={16} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Formulaire */}
+        <View className="space-y-4">
+          {/* Nom */}
+          <View className="bg-slate-50 rounded-3xl p-4 mb-3">
+            <TextInput
+              placeholder="Nom"
+              value={formData.lastName}
+              onChangeText={(text) => handleInputChange('lastName', text)}
+              className="font-urbanist-medium"
+            />
+          </View>
+
+          {/* Prénom */}
+          <View className="bg-slate-50 rounded-3xl p-4 mb-3">
+            <TextInput
+              placeholder="Prénom"
+              value={formData.firstName}
+              onChangeText={(text) => handleInputChange('firstName', text)}
+              className="font-urbanist-medium"
+            />
+          </View>
+
+          {/* Date de naissance */}
+          <TouchableOpacity 
+            className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-3"
+            onPress={() => setShowDatePicker(true)}
+          >
+            <TextInput
+              placeholder="Date de naissance"
+              value={formatDate(formData.birthDate)}
+              editable={false}
+              className="font-urbanist-medium flex-1"
+            />
+            <MaterialIcons name="date-range" size={24} color="#334155" />
+          </TouchableOpacity>
+
+          {/* Email */}
+          <View className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-3">
+            <TextInput
+              placeholder="Email (Optionnel)"
+              value={formData.email}
+              onChangeText={(text) => handleInputChange('email', text)}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              className="font-urbanist-medium flex-1"
+            />
+            <MaterialIcons name="email" size={24} color="#334155" />
+          </View>
+
+          {/* Note sur l'email */}
+          <View className="bg-orange-100 rounded-xl p-3 mb-4">
+            <Text className="text-center text-gray-700 font-urbanist-medium text-sm">
+              Ajoutez un mail pour recevoir les newsletters{"\n"}
+              Votre mail ne sera pas diffusé
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Bouton Continuer */}
+      <View className="mt-4 mb-2">
+        <GradientButton 
+          onPress={handleContinue} 
+          className="w-full"
+          disabled={!formData.firstName || !formData.lastName || !formData.birthDate || isLoading}
+        >
+          {isLoading ? "Chargement..." : "Continuer"}
+        </GradientButton>
+      </View>
+
+      {/* DatePicker modal */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={formData.birthDate || new Date()}
+          mode="date"
+          display="default"
+          onChange={handleDateChange}
+          maximumDate={new Date()}
+        />
+      )}
+      
+      {/* Modal pour la sélection d'image */}
+      <Modal
+        visible={showImageModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowImageModal(false)}
+      >
+        <View className="flex-1 justify-end bg-black/50">
+          <View className="bg-white rounded-t-3xl p-6">
+            <Text className="text-orange-500 text-xl font-urbanist-bold mb-6 text-start ml-2">Photo de profil</Text>
+            
+            <TouchableOpacity 
+              onPress={takePhoto}
+              className="flex-row items-center py-4  ml-2 "
+            >
+              <Image source={require('@/assets/icons/camera.png')} className="w-6 h-6" />
+              <Text className="ml-4 text-gray-700 font-urbanist-medium">Appareil photo</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={pickImage}
+              className="flex-row items-center py-4 ml-2 "
+            >
+              <Image source={require('@/assets/icons/image.png')} className="w-6 h-6" />
+              <Text className="ml-4 text-gray-700 font-urbanist-medium">Importez une photo</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => setShowImageModal(false)}
+              className="mt-6 border-2 border-orange-500 rounded-full py-4"
+            >
+              <Text className="text-center text-orange-500 text-lg font-urbanist-medium">Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* Modal de chargement */}
+      <LoadingModal visible={isLoading} />
+      
+      {/* Modal d'erreur */}
+      <ErrorModal 
+        visible={showErrorModal} 
+        message={errorMessage} 
+        onClose={() => setShowErrorModal(false)} 
+      />
+    </View>
+  );
+};
+
+export default CreateAccount;

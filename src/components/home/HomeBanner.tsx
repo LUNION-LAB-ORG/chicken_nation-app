@@ -197,7 +197,7 @@ const HomeBanner = () => {
         <Image
           source={require("../../assets/images/homebanner.png")}
           style={[styles.bannerImage, { width: width }]}
-          resizeMode="cover"
+          resizeMode="stretch"
           onLayout={({ nativeEvent }) => {
             setBannerImageSize({
               width: nativeEvent.layout.width,
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%",
     height: "100%",
-    backgroundColor: "rgba(0,0,0,0.3",
+    backgroundColor: "#7a3502",
   },
   activeBackdrop: {
     position: "absolute",

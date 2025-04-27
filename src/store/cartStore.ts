@@ -1,34 +1,81 @@
 import { ReactNode } from "react";
 import { create } from "zustand";
+import { CartStorage } from "@/services/storage/cart-storage";
 
+// Définir une interface CartItem compatible avec celle de cart-storage
 interface CartItem {
   id: string;
   name: string;
   price: number;
   quantity: number;
-  image: any;
+  image?: any; // Rendre l'image optionnelle pour éviter les erreurs de type
   description?: string;
   extras?: string[];
+  options?: any; // Ajouter la propriété options pour les suppléments
 }
 
 interface CartStore {
   items: CartItem[];
   totalItems: number;
   totalAmount: number;
-  addToCart: (item: CartItem) => void;
-  removeFromCart: (itemId: string) => void;
-  decrementItem: (itemId: string) => void;
-  updateQuantity: (itemId: string, quantity: number) => void;
-  clearCart: () => void;
+  isLoading: boolean;
+  initialized: boolean;
+  addToCart: (item: CartItem) => Promise<void>;
+  removeFromCart: (itemId: string) => Promise<void>;
+  decrementItem: (itemId: string) => Promise<void>;
+  updateQuantity: (itemId: string, quantity: number) => Promise<void>;
+  clearCart: () => Promise<void>;
+  initializeCart: () => Promise<void>;
 }
 
-const useCartStore = create<CartStore>((set) => ({
+const useCartStore = create<CartStore>((set, get) => ({
   items: [],
   totalItems: 0,
   totalAmount: 0,
+  isLoading: false,
+  initialized: false,
 
-  addToCart: (item) =>
-    set((state) => {
+  // Initialise le panier depuis le stockage persistant
+  initializeCart: async () => {
+    try {
+      set({ isLoading: true });
+      const storedCart = await CartStorage.getCart();
+      
+      if (storedCart && storedCart.items) {
+        // Convertir les items du stockage au format attendu par le store
+        const convertedItems: CartItem[] = storedCart.items.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          image: item.image || null,
+          description: item.options?.description,
+          extras: item.options?.extras as string[] || []
+        }));
+        
+        const totalItems = convertedItems.reduce((sum, item) => sum + item.quantity, 0);
+        const totalAmount = convertedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        set({
+          items: convertedItems,
+          totalItems,
+          totalAmount,
+          isLoading: false,
+          initialized: true
+        });
+      } else {
+        set({ isLoading: false, initialized: true });
+      }
+    } catch (error) {
+      console.error('Error initializing cart:', error);
+      set({ isLoading: false, initialized: true });
+    }
+  },
+
+  addToCart: async (item) => {
+    set({ isLoading: true });
+    
+    const newState = set((state) => {
       const existingItem = state.items.find((i) => i.id === item.id);
 
       if (existingItem) {
@@ -47,9 +94,37 @@ const useCartStore = create<CartStore>((set) => ({
         totalItems: state.totalItems + item.quantity,
         totalAmount: state.totalAmount + item.price * item.quantity,
       };
-    }),
+    });
+    
+    // Sauvegarder dans le stockage persistant
+    try {
+      // Convertir les items du store au format attendu par le stockage
+      const storageItems = get().items.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        options: {
+          description: item.description,
+          extras: item.extras
+        }
+      }));
+      
+      await CartStorage.saveCart({
+        items: storageItems,
+        total: get().totalAmount
+      });
+    } catch (error) {
+      console.error('Error saving cart:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
-  decrementItem: (itemId) =>
+  decrementItem: async (itemId) => {
+    set({ isLoading: true });
+    
     set((state) => {
       const existingItem = state.items.find((i) => i.id === itemId);
       if (!existingItem) return state;
@@ -71,9 +146,37 @@ const useCartStore = create<CartStore>((set) => ({
         totalItems: state.totalItems - 1,
         totalAmount: state.totalAmount - existingItem.price,
       };
-    }),
+    });
+    
+    // Sauvegarder dans le stockage persistant
+    try {
+      // Convertir les items du store au format attendu par le stockage
+      const storageItems = get().items.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        options: {
+          description: item.description,
+          extras: item.extras
+        }
+      }));
+      
+      await CartStorage.saveCart({
+        items: storageItems,
+        total: get().totalAmount
+      });
+    } catch (error) {
+      console.error('Error saving cart:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
-  removeFromCart: (itemId) =>
+  removeFromCart: async (itemId) => {
+    set({ isLoading: true });
+    
     set((state) => {
       const itemToRemove = state.items.find((i) => i.id === itemId);
       if (!itemToRemove) return state;
@@ -84,9 +187,37 @@ const useCartStore = create<CartStore>((set) => ({
         totalAmount:
           state.totalAmount - itemToRemove.price * itemToRemove.quantity,
       };
-    }),
+    });
+    
+    // Sauvegarder dans le stockage persistant
+    try {
+      // Convertir les items du store au format attendu par le stockage
+      const storageItems = get().items.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        options: {
+          description: item.description,
+          extras: item.extras
+        }
+      }));
+      
+      await CartStorage.saveCart({
+        items: storageItems,
+        total: get().totalAmount
+      });
+    } catch (error) {
+      console.error('Error saving cart:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
-  updateQuantity: (itemId, quantity) =>
+  updateQuantity: async (itemId, quantity) => {
+    set({ isLoading: true });
+    
     set((state) => {
       const updatedItems = state.items.map((item) => {
         if (item.id === itemId) {
@@ -109,14 +240,52 @@ const useCartStore = create<CartStore>((set) => ({
         totalItems: newTotalItems,
         totalAmount: newTotalAmount,
       };
-    }),
+    });
+    
+    // Sauvegarder dans le stockage persistant
+    try {
+      // Convertir les items du store au format attendu par le stockage
+      const storageItems = get().items.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        options: {
+          description: item.description,
+          extras: item.extras
+        }
+      }));
+      
+      await CartStorage.saveCart({
+        items: storageItems,
+        total: get().totalAmount
+      });
+    } catch (error) {
+      console.error('Error saving cart:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
-  clearCart: () =>
+  clearCart: async () => {
+    set({ isLoading: true });
+    
     set({
       items: [],
       totalItems: 0,
       totalAmount: 0,
-    }),
+    });
+    
+    // Vider le stockage persistant
+    try {
+      await CartStorage.clearCart();
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 }));
 
 export default useCartStore;

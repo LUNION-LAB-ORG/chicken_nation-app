@@ -229,7 +229,7 @@ const Cart: React.FC = () => {
           <View key={item.id} className="bg-white rounded-2xl p-4 mb-4">
             <View className="flex-row items-center">
               <Image
-                source={item.image}
+                source={typeof item.image === 'string' ? { uri: item.image } : item.image}
                 className="w-24 h-24 sm:w-20 sm:h-20 rounded-xl border-orange-500 border-[1px]"
                 style={{ resizeMode: "cover" }}
                 accessibilityLabel={`Image de ${item.name}`}

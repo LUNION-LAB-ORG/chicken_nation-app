@@ -17,6 +17,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useOnboarding } from "../context/OnboardingContext";
 import { useRouter } from "expo-router";
+import { useAuth } from "../context/AuthContext";
+import { ScrollView } from "react-native";
 
 /**
  * Écran d'authentification pour les utilisateurs incognitos
@@ -25,6 +27,7 @@ import { useRouter } from "expo-router";
 const GuestAuth: React.FC = () => {
   const { completeAuth, startAuthFlow, isFirstLaunch } = useOnboarding();
   const router = useRouter();
+  const { isAuthenticated, user } = useAuth();
 
   // Valeurs pour les animations
   const opacity = useSharedValue(0);
@@ -50,6 +53,14 @@ const GuestAuth: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    console.log("[GuestAuth] isAuthenticated:", isAuthenticated);
+    console.log("[GuestAuth] user:", user);
+    if (isAuthenticated) {
+      console.log("[GuestAuth] ATTENTION: L'utilisateur est authentifié mais voit l'écran GuestAuth !");
+    }
+  }, [isAuthenticated, user]);
+
   /**
    * Style animé pour le conteneur principal
    */
@@ -58,10 +69,7 @@ const GuestAuth: React.FC = () => {
     transform: [{ translateX: translateX.value }],
   }));
 
-  /**
-   * Ignore l'authentification et passe à l'écran de bienvenue si premier lancement,
-   * sinon va directement aux tabs invités
-   */
+ 
   const handleSkip = (): void => {
     completeAuth();
     if (isFirstLaunch) {
@@ -74,26 +82,12 @@ const GuestAuth: React.FC = () => {
   /**
    * Commence le flux d'authentification par email/téléphone
    */
-  const handleEmailAuth = (): void => {
+  const handlePhoneAuth = (): void => {
     startAuthFlow();
-    router.push("/(auth)/authwithemail");
+    router.push("/(auth)/authwithphone");
   };
 
-  /**
-   * Commence le flux d'authentification avec Google
-   */
-  const handleGoogleAuth = (): void => {
-    startAuthFlow();
  
-  };
-
-  /**
-   * Commence le flux d'authentification avec Facebook
-   */
-  const handleFacebookAuth = (): void => {
-    startAuthFlow();
-   
-  };
 
   return (
     <Animated.View className="flex-1 bg-white" entering={FadeIn.duration(600)}>
@@ -103,10 +97,11 @@ const GuestAuth: React.FC = () => {
         style={{ flex: 1 }}
         className="w-[103%] h-[100%] absolute left-[-1%] flex-1"
       >
-        <View className="h-[35%]"></View>
-        <View className="flex-1 justify-center h-[65%] mt-20 px-6">
+       <ScrollView showsVerticalScrollIndicator={false}>
+       <View className="h-[35%]"></View>
+        <View className="flex-1 justify-center px-6">
           {/* Titre et sous-titre */}
-          <Text className="font-blocklyn-grunge text-[72px] text-white text-start ">
+          <Text className="font-blocklyn-grunge text-[72px] mt-[45px] text-white text-start ">
             Bienvenue
           </Text>
 
@@ -114,7 +109,7 @@ const GuestAuth: React.FC = () => {
             Vos plats préférés livrés {`\n`}rapidement à votre porte.
           </Text>
 
-          <View className="w-full h-[2px] bg-white/50 mb-3" />
+          <View className="w-full h-[2px] mt-[140px] bg-white/50 mb-3" />
 
           <Text className="font-urbanist-medium text-white text-center mb-8">
             Connexion ou inscription rapide et simple
@@ -125,7 +120,7 @@ const GuestAuth: React.FC = () => {
             {/* Email/Numéro */}
             <Animated.View entering={SlideInRight.delay(200).duration(500)}>
               <TouchableOpacity
-                onPress={handleEmailAuth}
+                onPress={handlePhoneAuth}
                 className="w-full border-[1px] mt-1 border-white bg-orange-500 p-4 py-5 mb-6 rounded-3xl flex-row items-center justify-center space-x-2"
                 accessibilityLabel="Continuer avec email ou numéro"
               >
@@ -135,56 +130,20 @@ const GuestAuth: React.FC = () => {
               </TouchableOpacity>
             </Animated.View>
 
-            {/* Google */}
-            <Animated.View entering={SlideInRight.delay(400).duration(500)}>
-              <TouchableOpacity
-                onPress={handleGoogleAuth}
-                className="w-full bg-white p-4 mb-6 py-5 rounded-3xl flex-row items-center justify-center space-x-2"
-                accessibilityLabel="Continuer avec Google"
-              >
-                <Image
-                  source={require("../../assets/icons/google.png")}
-                  className="w-8 h-8 mr-4"
-                  style={{ resizeMode: "contain" }}
-                  accessibilityLabel="Logo Google"
-                />
-                <Text className="font-urbanist-medium text-black text-base">
-                  Continuer avec Google
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Facebook */}
-            <Animated.View entering={SlideInRight.delay(600).duration(500)}>
-              <TouchableOpacity
-                onPress={handleFacebookAuth}
-                className="w-full bg-white p-4 py-5 rounded-3xl flex-row items-center justify-center space-x-2"
-                accessibilityLabel="Continuer avec Facebook"
-              >
-                <Image
-                  source={require("../../assets/icons/facebook.png")}
-                  className="w-8 h-8 mr-4"
-                  style={{ resizeMode: "contain" }}
-                  accessibilityLabel="Logo Facebook"
-                />
-                <Text className="font-urbanist-medium text-black text-base">
-                  Continuer avec Facebook
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-
+        
             {/* Option pour ignorer */}
             <TouchableOpacity
               onPress={handleSkip}
               className="items-center justify-center"
               accessibilityLabel="Ignorer cette étape"
             >
-              <Text className="font-urbanist-medium text-lg mt-4 text-gray-100">
+              <Text className="font-urb anist-medium text-lg mt-4 text-gray-100">
                 Ignorer cette étape
               </Text>
             </TouchableOpacity>
           </View>
         </View>
+       </ScrollView>
       </ImageBackground>
     </Animated.View>
   );

@@ -6,9 +6,7 @@ module.exports = function (api) {
       "nativewind/babel",
     ],
     plugins: [
-      ["react-native-reanimated/plugin", {
-        relativeSourceLocation: true,
-      }]
+      ['react-native-reanimated/plugin', { relativeSourceLocation: true }]
     ],
   };
 };

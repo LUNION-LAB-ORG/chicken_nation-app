@@ -24,6 +24,8 @@ import { useLocation } from "../../context/LocationContext";
 import SuccessModal from "@/components/ui/SuccessModal";
 import debounce from "lodash/debounce";
 import DynamicHeader from "@/components/home/DynamicHeader";
+import { addUserAddress, Address } from "@/services/api/address";
+import { useAuth } from "@/app/context/AuthContext";
 
 /**
  * Interface pour les données du formulaire d'adresse
@@ -137,19 +139,52 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
 
       const formattedAddress = formatAddress(tempFormData);
 
-      const addressDetails = {
-        ...tempFormData,
-        formattedAddress,
+      // Préparer les données d'adresse pour le backend
+      const addressData: Address = {
         title: addressTitle,
+        address: formattedAddress,
+        street: tempFormData.address || "",
+        city: tempFormData.city || "Abidjan",
+        longitude: 0, // Ces valeurs seront mises à jour si on a des coordonnées
+        latitude: 0
       };
 
-      await setLocationType("manual");
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await setAddressDetails(addressDetails);
+      // Si nous avons des coordonnées, les utiliser
+      if (locationData.coordinates) {
+        addressData.longitude = locationData.coordinates.longitude;
+        addressData.latitude = locationData.coordinates.latitude;
+      }
 
-      setIsLoading(false);
-      setShowTitleModal(false);
-      router.back();
+      // Enregistrer l'adresse dans le backend
+      const savedAddress = await addUserAddress(addressData);
+      
+      if (savedAddress) {
+        console.log("Adresse enregistrée avec succès:", savedAddress);
+        
+        // Mettre à jour le contexte de localisation
+        const addressDetails = {
+          ...tempFormData,
+          formattedAddress,
+          title: addressTitle,
+        };
+
+        await setLocationType("manual");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await setAddressDetails(addressDetails);
+        
+        if (savedAddress.latitude && savedAddress.longitude) {
+          await setCoordinates({
+            latitude: savedAddress.latitude,
+            longitude: savedAddress.longitude
+          });
+        }
+
+        setIsLoading(false);
+        setShowTitleModal(false);
+        router.back();
+      } else {
+        throw new Error("Échec de l'enregistrement de l'adresse");
+      }
     } catch (error) {
       console.error("Erreur lors de l'enregistrement de l'adresse:", error);
       Alert.alert(
@@ -249,7 +284,7 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "white" }}>
+    <SafeAreaView className="mt-8 pl-4" style={{ flex: 1, backgroundColor: "white" }}>
       <StatusBar style="dark" />
       
       {/* Header avec retour + logo + panier */}
@@ -266,7 +301,7 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
       >
         <View className="flex-1 bg-white">
           {/* Barre de recherche */}
-          <View className="px-6 py-4">
+          <View className="pr-6 py-4">
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
