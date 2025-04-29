@@ -30,19 +30,15 @@ export const STORAGE_KEYS = {
   },
 };
 
-/**
- * Stocke des données dans AsyncStorage
- * @param key Clé de stockage
- * @param value Valeur à stocker (sera convertie en JSON)
- */
+ 
 export const storeData = async (key: string, value: any): Promise<void> => {
   try {
     const jsonValue = JSON.stringify(value);
     await AsyncStorage.setItem(key, jsonValue);
-    console.log(`Data stored successfully for key: ${key}`);
+  
   } catch (error) {
     console.error('Error storing data:', error);
-    throw new Error(`Failed to store data for key: ${key}`);
+     
   }
 };
 
@@ -68,10 +64,10 @@ export const getData = async (key: string): Promise<any> => {
 export const removeData = async (key: string): Promise<void> => {
   try {
     await AsyncStorage.removeItem(key);
-    console.log(`Data removed successfully for key: ${key}`);
+   
   } catch (error) {
     console.error('Error removing data:', error);
-    throw new Error(`Failed to remove data for key: ${key}`);
+    
   }
 };
 

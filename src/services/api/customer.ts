@@ -120,7 +120,7 @@ export const getCustomerDetails = async (): Promise<CustomerResponse> => {
       
       return userData;
     } catch (primaryError) {
-      console.log('Erreur avec l\'endpoint principal, tentative avec l\'endpoint alternatif');
+     
       
       // Si l'endpoint principal échoue, essayer l'endpoint alternatif
       try {
@@ -134,7 +134,6 @@ export const getCustomerDetails = async (): Promise<CustomerResponse> => {
         
         return userData;
       } catch (secondaryError) {
-        console.log('Erreur avec l\'endpoint alternatif, récupération depuis le stockage local');
         
         // Si les deux endpoints échouent, récupérer les données du stockage local
         return await getCustomerFromStorage();

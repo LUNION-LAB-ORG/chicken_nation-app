@@ -28,7 +28,6 @@ export const AuthStorage = {
       if (phone) {
         await storeData(STORAGE_KEYS.AUTH.USER_PHONE, phone);
       }
-      console.log('Auth tokens stored successfully');
     } catch (error) {
       console.error('Error storing auth tokens:', error);
       throw new Error('Failed to store authentication tokens');
@@ -42,7 +41,6 @@ export const AuthStorage = {
   async storeUserData(userData: User): Promise<void> {
     try {
       await storeData(STORAGE_KEYS.USER.PROFILE, userData);
-      console.log('User data stored successfully');
     } catch (error) {
       console.error('Error storing user data:', error);
       throw new Error('Failed to store user data');

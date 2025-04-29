@@ -45,7 +45,7 @@ const FavoritesScreen = () => {
 
   // Ouvrir le modal de confirmation
   const handleOpenConfirmModal = (favoriteId: string, dishName: string) => {
-    console.log(`[Favoris] Ouverture du modal de confirmation pour: ${dishName} (id: ${favoriteId})`);
+   
     setSelectedDish({ id: favoriteId, name: dishName });
     setShowConfirmModal(true);
   };
@@ -60,12 +60,12 @@ const FavoritesScreen = () => {
   // Gérer la suppression d'un favori
   const handleRemoveFavorite = async (favoriteId: string, dishName: string) => {
     try {
-      console.log(`[Favoris] Suppression du favori: ${dishName} (id: ${favoriteId})`);
+     
       const success = await removeFromFavorites(favoriteId);
       if (success) {
         // Mettre à jour la liste des favoris localement
         setFavorites(prev => prev.filter(item => item.favorite_id !== favoriteId));
-        console.log(`[Favoris] Suppression réussie: ${dishName}`);
+       
         setSuccessMessage(`${dishName} a été retiré de vos favoris`);
         setShowSuccessModal(true);
       }

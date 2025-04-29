@@ -5,8 +5,7 @@ import { useOnboarding } from "./context/OnboardingContext";
 import { useAuth } from "./context/AuthContext";
 import Splash from "./onboarding/splash";
 import GuestAuth from "./onboarding/guestAuth";
-import WelcomeScreen from "./onboarding/welcome";
-import Spinner from "@/components/ui/Spinner";
+import WelcomeScreen from "./onboarding/welcome"; 
 
 export default function Index() {
   const router = useRouter();
@@ -25,21 +24,21 @@ export default function Index() {
     
     // Priorité 1: Si c'est le premier lancement et qu'on doit montrer l'onboarding
     if (isFirstLaunch && showOnboarding && currentScreen) {
-      console.log("[Index] Premier lancement, affichage de l'onboarding:", currentScreen);
+      
       // Laisser l'onboarding s'afficher sans redirection
       return;
     }
     
     // Priorité 2: Si l'utilisateur est authentifié, aller aux tabs utilisateur
     if (isAuthenticated && user) {
-      console.log("[Index] Utilisateur authentifié, redirection vers /(tabs-user)/");
+      
       router.replace("/(tabs-user)/");
       return;
     }
     
     // Priorité 3: Si l'utilisateur n'est pas authentifié et qu'on n'est pas dans le flow d'auth
     if (!isAuthenticated && !isAuthFlow && !isLoading) {
-      console.log("[Index] Utilisateur non authentifié, redirection vers /onboarding/guestAuth");
+     
       router.replace("/onboarding/guestAuth");
       return;
     }
@@ -47,7 +46,6 @@ export default function Index() {
 
   // Afficher l'écran d'onboarding approprié si nécessaire
   if (showOnboarding && !isAuthFlow && currentScreen) {
-    console.log("[Index] Affichage de l'écran d'onboarding:", currentScreen);
     return (
       <View style={StyleSheet.absoluteFill}>
         {currentScreen === "splash" && <Splash />}

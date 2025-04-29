@@ -124,38 +124,31 @@ const ProductId = () => {
     const checkFavoriteStatus = async () => {
       if (!productId || !isAuthenticated) return;
       
-      // Vérifier l'état d'authentification
-      console.log(`[Auth Debug] État d'authentification: ${isAuthenticated ? 'Connecté' : 'Non connecté'}`);
-      console.log(`[Auth Debug] User: ${user ? user.first_name : 'Aucun'}`);
-      
+ 
       // Vérifier le header d'authentification
       const authHeader = api.defaults.headers.common["Authorization"];
-      console.log(`[Auth Debug] Header d'authentification: ${authHeader ? 'Présent' : 'Absent'}`);
-      
+    
       // Afficher le token complet pour comparaison
       if (authHeader && typeof authHeader === 'string') {
         const token = authHeader.replace('Bearer ', '');
-        console.log(`[Auth Debug] Token (premiers caractères): ${token.substring(0, 20)}...`);
+       
       }
-      
-      // Récupérer le token depuis le contexte d'authentification
-      console.log(`[Auth Debug] Token du contexte (premiers caractères): ${accessToken ? accessToken.substring(0, 20) : 'Aucun'}...`);
       
       try {
         const favorites = await getUserFavorites();
-        console.log(`[Favoris] Vérification du statut - Plat ID: ${productId}`);
+ 
         
         // Trouver le favori correspondant au plat actuel
         const favorite = favorites.find(fav => fav.id === productId);
         
         if (favorite) {
-          console.log(`[Favoris] Plat trouvé dans les favoris - ID favori: ${favorite.favorite_id}`);
+          
           setIsLiked(true);
           
           // Stocker l'ID du favori dans une variable d'état dédiée
           if (favorite.favorite_id) {
             setFavoriteId(favorite.favorite_id);
-            console.log(`[Favoris] ID du favori stocké: ${favorite.favorite_id}`);
+             
           }
         } else {
           console.log(`[Favoris] Plat non trouvé dans les favoris`);
@@ -330,7 +323,6 @@ const ProductId = () => {
     
     // Si c'est déjà dans les favoris, on affiche le modal de confirmation
     if (isLiked) {
-      console.log(`[Favoris] Ouverture du modal de confirmation pour retirer: ${menuItem.name}`);
       setShowConfirmModal(true);
       return;
     }
@@ -338,20 +330,18 @@ const ProductId = () => {
     // Sinon on ajoute aux favoris directement
     try {
       setIsFavoriteLoading(true);
-      console.log(`[Favoris] Ajout aux favoris: ${menuItem.name} (id: ${menuItem.id})`);
       
       const success = await addToFavorites(menuItem.id);
       if (success) {
         // Mettre à jour l'état local
         setIsLiked(true);
-        console.log(`[Favoris] Ajout réussi: ${menuItem.name}`);
         
         // Récupérer l'ID du favori pour la suppression future
         const favorites = await getUserFavorites();
         const favorite = favorites.find(fav => fav.id === menuItem.id);
         if (favorite && favorite.favorite_id) {
           setFavoriteId(favorite.favorite_id);
-          console.log(`[Favoris] ID du favori récupéré: ${favorite.favorite_id}`);
+          
         }
         
         setSuccessMessage(`${menuItem.name} a été ajouté à vos favoris`);
@@ -374,13 +364,11 @@ const ProductId = () => {
     
     try {
       setIsFavoriteLoading(true);
-      console.log(`[Favoris] Suppression du favori: ${menuItem.name} (favorite_id: ${favoriteId})`);
       
       const success = await removeFromFavorites(favoriteId);
       if (success) {
         setIsLiked(false);
         setFavoriteId(null);
-        console.log(`[Favoris] Suppression réussie: ${menuItem.name}`);
         setSuccessMessage(`${menuItem.name} a été retiré de vos favoris`);
         setShowSuccessModal(true);
       } else {

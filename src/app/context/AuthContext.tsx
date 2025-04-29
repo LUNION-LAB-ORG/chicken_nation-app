@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setIsLoading(true);
         const authData = await AuthStorage.getAuthData();
-        console.log('[AUTH] Tokens relus depuis storage:', authData);
+      
         if (authData?.accessToken) {
           try {
             // Vérifier si le token est valide
@@ -102,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             // Récupérer les données utilisateur du stockage
             const userData = await AuthStorage.getUserData();
-            console.log('[AUTH] Profil user relu depuis storage:', userData);
+           
             if (userData) {
               setUser(userData);
             } else {
@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Configurer le token pour les futures requêtes
       setAuthToken(token);
       
-      console.log('Utilisateur connecté avec succès:', userData.id);
+      
     } catch (error) {
       console.error('Erreur lors de la connexion:', error);
       throw error;
@@ -189,9 +189,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ne stocker dans le localStorage que si explicitement demandé
       if (persistToStorage) {
         AuthStorage.storeUserData(updatedUser);
-        console.log('Données utilisateur mises à jour et stockées localement');
+      
       } else {
-        console.log('Données utilisateur mises à jour uniquement dans le contexte');
+        
       }
     }
   };
