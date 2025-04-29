@@ -198,7 +198,7 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
                 {user ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : "User name"}
               </Text>
               <Text className="text-gray-500 text-sm">
-                {user?.email || "username@gmail.com"}
+                {user?.email || ""}
               </Text>
             </View>
           </View>

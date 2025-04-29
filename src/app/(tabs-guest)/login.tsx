@@ -49,7 +49,7 @@ const LoginScreen: React.FC = () => {
         {/* Bouton principal de connexion */}
         <TouchableOpacity
           onPress={handleEmailAuth}
-          className="bg-orange-600 w-full h-14 z-20 items-center justify-center"
+          className="bg-[#F17922] -mt-[1px] w-full h-14 z-20 items-center justify-center"
         >
           <Text className="text-base font-sofia-light text-white text-center my-4">
             Connexion ou inscription rapide et simple

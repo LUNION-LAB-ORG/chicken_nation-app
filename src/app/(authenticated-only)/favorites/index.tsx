@@ -3,16 +3,26 @@ import { View, Text, TouchableOpacity, ScrollView, Image, ActivityIndicator } fr
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import { ArrowLeft, Heart, Star } from "lucide-react-native";
+import { Heart, Star } from "lucide-react-native";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import { getUserFavorites, removeFromFavorites } from "@/services/api/favorites";
 import { MenuItem } from "@/types";
+import SuccessModal from "@/components/ui/SuccessModal";
+import ConfirmRemoveFavoriteModal from "@/components/ui/ConfirmRemoveFavoriteModal";
 
 const FavoritesScreen = () => {
   const router = useRouter();
   const [favorites, setFavorites] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // État pour le modal de succès
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  
+  // État pour le modal de confirmation
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedDish, setSelectedDish] = useState<{id: string, name: string} | null>(null);
 
   // Charger les favoris de l'utilisateur
   useEffect(() => {
@@ -33,16 +43,37 @@ const FavoritesScreen = () => {
     fetchFavorites();
   }, []);
 
+  // Ouvrir le modal de confirmation
+  const handleOpenConfirmModal = (favoriteId: string, dishName: string) => {
+    console.log(`[Favoris] Ouverture du modal de confirmation pour: ${dishName} (id: ${favoriteId})`);
+    setSelectedDish({ id: favoriteId, name: dishName });
+    setShowConfirmModal(true);
+  };
+  
+  // Annuler la suppression
+  const handleCancelRemove = () => {
+    console.log('[Favoris] Suppression annulée');
+    setShowConfirmModal(false);
+    setSelectedDish(null);
+  };
+
   // Gérer la suppression d'un favori
-  const handleRemoveFavorite = async (dishId: string) => {
+  const handleRemoveFavorite = async (favoriteId: string, dishName: string) => {
     try {
-      const success = await removeFromFavorites(dishId);
+      console.log(`[Favoris] Suppression du favori: ${dishName} (id: ${favoriteId})`);
+      const success = await removeFromFavorites(favoriteId);
       if (success) {
         // Mettre à jour la liste des favoris localement
-        setFavorites(prev => prev.filter(item => item.id !== dishId));
+        setFavorites(prev => prev.filter(item => item.favorite_id !== favoriteId));
+        console.log(`[Favoris] Suppression réussie: ${dishName}`);
+        setSuccessMessage(`${dishName} a été retiré de vos favoris`);
+        setShowSuccessModal(true);
       }
     } catch (error) {
-      // Ignorer les erreurs silencieusement
+      console.log(`[Favoris] Erreur lors de la suppression: ${error}`);
+    } finally {
+      setShowConfirmModal(false);
+      setSelectedDish(null);
     }
   };
 
@@ -103,6 +134,21 @@ const FavoritesScreen = () => {
           onBackPress={() => router.back()}
         />
       </View>
+      
+      {/* Modal de succès pour les favoris */}
+      <SuccessModal
+        visible={showSuccessModal}
+        message={successMessage}
+        onClose={() => setShowSuccessModal(false)}
+      />
+      
+      {/* Modal de confirmation pour la suppression */}
+      <ConfirmRemoveFavoriteModal
+        visible={showConfirmModal}
+        dishName={selectedDish?.name || ""}
+        onConfirm={() => selectedDish && handleRemoveFavorite(selectedDish.id, selectedDish.name)}
+        onCancel={handleCancelRemove}
+      />
 
       <ScrollView className="flex-1 px-4" showsVerticalScrollIndicator={false}>
         {favorites.length === 0 ? (
@@ -147,7 +193,7 @@ const FavoritesScreen = () => {
                         <Text className="text-base font-sofia-medium text-gray-900 flex-1 mr-2">
                           {meal.name}
                         </Text>
-                        <TouchableOpacity onPress={() => handleRemoveFavorite(meal.id)}>
+                        <TouchableOpacity onPress={() => handleOpenConfirmModal(meal.favorite_id || meal.id, meal.name)}>
                           <Heart size={20} color="#F97316" fill="#F97316" />
                         </TouchableOpacity>
                       </View>

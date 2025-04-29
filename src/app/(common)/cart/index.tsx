@@ -184,7 +184,8 @@ const Cart: React.FC = () => {
   if (items.length === 0) {
     return (
       <View className="flex-1 bg-white">
-      
+      <StatusBar style="dark" />
+      <CustomStatusBar />
        
         <View className="flex-1 items-center justify-center">
           <Image

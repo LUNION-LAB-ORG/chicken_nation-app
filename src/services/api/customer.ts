@@ -42,12 +42,7 @@ export interface CustomerResponse {
   updated_at: string;
 }
 
-/**
- * Crée un nouveau client
- * @param data Données du client à créer
- * @param token Token d'authentification (optionnel)
- * @returns Données du client créé
- */
+ 
 export const createCustomer = async (data: CreateCustomerDto, token?: string): Promise<CustomerResponse> => {
   try {
     const config = token ? {
@@ -58,8 +53,7 @@ export const createCustomer = async (data: CreateCustomerDto, token?: string): P
     // Créer une copie des données SANS le champ phone
     const { phone, ...dataWithoutPhone } = data;
     const formattedData = { ...dataWithoutPhone };
-    console.log('Creating new customer with token:', token ? 'Token provided' : 'No token');
-    console.log('Request data (no phone):', formattedData);
+ 
     const response = await api.post("/v1/customer", formattedData, config);
     return response.data;
   } catch (error: any) {
@@ -93,7 +87,7 @@ export const updateCustomer = async (data: UpdateCustomerDto, token?: string): P
         Authorization: `Bearer ${token}`,
         Accept: 'application/json, text/plain, */*',
       } as any,
-      timeout: 20000, // 20 secondes (augmente le timeout)
+      timeout: 20000, 
     };
 
     if (!(cleanData instanceof FormData)) {
@@ -102,14 +96,8 @@ export const updateCustomer = async (data: UpdateCustomerDto, token?: string): P
       delete config.headers['Content-Type'];
     }
 
-    console.log('--- [updateCustomer] ---');
-    console.log('Token:', token ? 'Fourni' : 'Non fourni');
-    console.log('Headers:', config.headers);
-    console.log('Payload:', cleanData instanceof FormData ? '[FormData]' : cleanData);
-    console.log('Appel PATCH', '/v1/customer');
-
     const response = await api.patch("/v1/customer", cleanData, config);
-    console.log('Réponse API:', response.data);
+ 
     return response.data;
   } catch (error: any) {
     console.error('Update customer error:', error.response?.data || error.message);
@@ -117,10 +105,7 @@ export const updateCustomer = async (data: UpdateCustomerDto, token?: string): P
   }
 };
 
-/**
- * Récupère les détails du client connecté
- * @returns Données du client
- */
+ 
 export const getCustomerDetails = async (): Promise<CustomerResponse> => {
   try {
     // Essayer d'abord avec l'endpoint principal

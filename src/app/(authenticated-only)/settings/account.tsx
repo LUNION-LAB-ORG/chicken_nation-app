@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Dimensions, TextInput, Alert, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Dimensions, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { ArrowLeft, Calendar, Mail, Phone, Lock, Eye, EyeOff, Edit, User, X, Camera, Trash2 } from "lucide-react-native";
+import {Eye, EyeOff} from "lucide-react-native";
 import { getCustomerDetails } from "@/services/api/customer";
 import { useAuth } from "@/app/context/AuthContext";
 import ErrorModal from "@/components/ui/ErrorModal";
 import { format } from "date-fns";
-import { api } from "@/services/api/api";
-import { formatPhoneNumber } from "@/services/api/auth";
-import { AuthStorage } from '@/services/storage/auth-storage';
+import { api } from "@/services/api/api"; 
 import { formatImageUrl } from '@/utils/imageHelpers';
 
 const { width } = Dimensions.get('window');
@@ -60,7 +58,6 @@ const AccountSettings = () => {
         const userData = await getCustomerDetails();
         
         if (userData) {
-          console.log('Données utilisateur chargées depuis l\'API:', userData);
           
           // Mettre à jour les états locaux avec les données de l'API
           setFirstName(userData.first_name || "");
@@ -517,20 +514,7 @@ const AccountSettings = () => {
         return;
       }
       
-      // Envoi de la requête avec FormData
-      console.log('Envoi de la mise à jour du profil avec FormData');
-      
-      // Afficher le contenu du FormData pour débogage
-      console.log('FormData contenu:');
-      // @ts-ignore
-      for (let [key, value] of formData._parts || []) {
-        if (key === 'image') {
-          console.log('- image:', value.name, value.type);
-        } else {
-          console.log(`- ${key}:`, value);
-        }
-      }
-      
+   
       const response = await api.patch('/v1/customer', formData, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -539,26 +523,24 @@ const AccountSettings = () => {
         },
         timeout: 30000, // 30 secondes
       });
-      
-      console.log('Réponse de mise à jour du profil:', response.data);
+       
       
       // Déterminer l'URL de l'image à utiliser
       let imageUrl = null;
       
       // 1. Utiliser l'image de la réponse API si disponible
       if (response.data && response.data.image) {
-        imageUrl = formatImageUrl(response.data.image);
-        console.log('Image mise à jour depuis la réponse API:', imageUrl);
+        imageUrl = formatImageUrl(response.data.image); 
       } 
       // 2. Sinon, si une nouvelle image a été sélectionnée, l'utiliser
       else if (hasNewImage && profileImage) {
         imageUrl = profileImage; // Les images locales n'ont pas besoin d'être formatées
-        console.log('Utilisation de la nouvelle image locale:', imageUrl);
+        
       } 
       // 3. Sinon, conserver l'image existante
       else if (user?.image) {
         imageUrl = formatImageUrl(user.image);
-        console.log('Conservation de l\'image existante:', imageUrl);
+     
       }
       
       // Mise à jour des données utilisateur dans le contexte
@@ -568,20 +550,18 @@ const AccountSettings = () => {
         last_name: lastName,
         birth_day: birthDate ? format(birthDate, 'dd/MM/yyyy') : null,
         email: email || null,
-        phone: phone, // Conserver le numéro de téléphone actuel
+        phone: phone,
         image: imageUrl,
       };
       
-      // Mettre à jour le contexte d'authentification SANS stocker dans le localStorage
       updateUserData(updatedUserData, false);
       
       setSuccessMessage("Profil mis à jour avec succès !");
       
-      // Recharger les données utilisateur depuis l'API pour s'assurer d'avoir les données les plus récentes
+      
       try {
         const freshUserData = await getCustomerDetails();
         if (freshUserData) {
-          // Mettre à jour le contexte d'authentification SANS stocker dans le localStorage
           updateUserData(freshUserData, false);
           console.log('Données utilisateur rechargées depuis l\'API');
         }
@@ -592,11 +572,7 @@ const AccountSettings = () => {
       console.error('Erreur lors de la mise à jour du profil:', e);
       // Afficher plus de détails sur l'erreur
       if (e.response) {
-        console.error('Détails de l\'erreur:', {
-          status: e.response.status,
-          data: e.response.data,
-          headers: e.response.headers
-        });
+    
       }
       setErrorMessage(e.message || "Erreur lors de la mise à jour du profil");
       setShowErrorModal(true);

@@ -18,13 +18,16 @@ import useCartStore from "@/store/cartStore";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import useReservationStore from "@/store/reservationStore";
 import CustomCheckbox from "@/components/ui/CustomCheckbox";
+import { api } from "@/services/api/api";
 // Remplacer l'import des données mockées par le service de menu
 import { getMenuById } from "@/services/menuService";
 import { useAuth } from "@/app/context/AuthContext";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from 'expo-file-system';
 import { Share } from 'react-native';
-import { addToFavorites, removeFromFavorites, checkIsFavorite } from "@/services/api/favorites";
+import { addToFavorites, removeFromFavorites, checkIsFavorite, getUserFavorites } from "@/services/api/favorites";
+import SuccessModal from "@/components/ui/SuccessModal";
+import ConfirmRemoveFavoriteModal from "@/components/ui/ConfirmRemoveFavoriteModal";
 
 const ProductId = () => {
   const { productId, offerId } = useLocalSearchParams<{
@@ -56,10 +59,21 @@ const ProductId = () => {
   // Ajouter un état local pour le "like"
   const [isLiked, setIsLiked] = useState(false);
   const [isFavoriteLoading, setIsFavoriteLoading] = useState(false);
+  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+  
+  // État pour le modal de succès
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  
+  // État pour le modal de confirmation de suppression
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  
+  // État pour le modal de connexion
+  const [showLoginAlert, setShowLoginAlert] = useState(false);
 
   // Récupération de l'état de réservation
   const { isActive } = useReservationStore();
-  const { user } = useAuth(); // Ajout de l'authentification réelle
+  const { user, accessToken } = useAuth(); // Ajout de l'authentification réelle
   const isAuthenticated = user; // Utilisation de l'état d'auth au lieu de isActive
 
   const addToCart = useCartStore((state) => state.addToCart);
@@ -74,14 +88,11 @@ const ProductId = () => {
         setIsLoadingMenu(true);
         setError(null);
         
-        console.log(`🔍 Chargement des détails du menu ${productId}...`);
         const menuData = await getMenuById(productId);
         
-        if (menuData) {
-          console.log(`✅ Détails du menu chargés avec succès:`, JSON.stringify(menuData, null, 2));
-          console.log(`🔎 Suppléments disponibles:`, menuData.supplements ? Object.keys(menuData.supplements) : 'aucun');
+        if (menuData) { 
           if (menuData.supplements) {
-            console.log(`📋 Structure des suppléments:`, JSON.stringify(menuData.supplements, null, 2));
+           
           }
           setMenuItem(menuData);
           
@@ -94,7 +105,7 @@ const ProductId = () => {
             });
           }
         } else {
-          console.warn(`⚠️ Aucun détail trouvé pour le menu ${productId}`);
+          
           setError("Ce produit n'est pas disponible.");
         }
       } catch (err) {
@@ -108,16 +119,51 @@ const ProductId = () => {
     fetchMenuData();
   }, [productId]);
 
-  // Vérifier si le menu est dans les favoris
+  // Vérifier si le plat est dans les favoris
   useEffect(() => {
     const checkFavoriteStatus = async () => {
       if (!productId || !isAuthenticated) return;
       
+      // Vérifier l'état d'authentification
+      console.log(`[Auth Debug] État d'authentification: ${isAuthenticated ? 'Connecté' : 'Non connecté'}`);
+      console.log(`[Auth Debug] User: ${user ? user.first_name : 'Aucun'}`);
+      
+      // Vérifier le header d'authentification
+      const authHeader = api.defaults.headers.common["Authorization"];
+      console.log(`[Auth Debug] Header d'authentification: ${authHeader ? 'Présent' : 'Absent'}`);
+      
+      // Afficher le token complet pour comparaison
+      if (authHeader && typeof authHeader === 'string') {
+        const token = authHeader.replace('Bearer ', '');
+        console.log(`[Auth Debug] Token (premiers caractères): ${token.substring(0, 20)}...`);
+      }
+      
+      // Récupérer le token depuis le contexte d'authentification
+      console.log(`[Auth Debug] Token du contexte (premiers caractères): ${accessToken ? accessToken.substring(0, 20) : 'Aucun'}...`);
+      
       try {
-        const isFavorite = await checkIsFavorite(productId);
-        setIsLiked(isFavorite);
+        const favorites = await getUserFavorites();
+        console.log(`[Favoris] Vérification du statut - Plat ID: ${productId}`);
+        
+        // Trouver le favori correspondant au plat actuel
+        const favorite = favorites.find(fav => fav.id === productId);
+        
+        if (favorite) {
+          console.log(`[Favoris] Plat trouvé dans les favoris - ID favori: ${favorite.favorite_id}`);
+          setIsLiked(true);
+          
+          // Stocker l'ID du favori dans une variable d'état dédiée
+          if (favorite.favorite_id) {
+            setFavoriteId(favorite.favorite_id);
+            console.log(`[Favoris] ID du favori stocké: ${favorite.favorite_id}`);
+          }
+        } else {
+          console.log(`[Favoris] Plat non trouvé dans les favoris`);
+          setIsLiked(false);
+          setFavoriteId(null);
+        }
       } catch (error) {
-        // Ignorer les erreurs silencieusement
+        console.log(`[Favoris] Erreur lors de la vérification: ${error}`);
       }
     };
 
@@ -175,9 +221,7 @@ const ProductId = () => {
       setQuantity(0);
       setSelectedSupplements({});
       setShowCustomizations(false);
-
-      // Afficher un message de confirmation
-      console.log("Produit ajouté au panier !");
+ 
     }
   };
 
@@ -269,40 +313,90 @@ const ProductId = () => {
 
   // Gérer l'ajout/suppression des favoris
   const handleFavoriteToggle = async () => {
-    if (!menuItem || !isAuthenticated) {
-      Alert.alert("Connexion requise", "Veuillez vous connecter pour ajouter ce plat à vos favoris.");
+    // Vérifier si l'utilisateur est connecté
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Connexion requise",
+        "Veuillez vous connecter pour ajouter ce plat à vos favoris.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { text: "Se connecter", onPress: () => router.push("/(tabs-guest)/login") }
+        ]
+      );
       return;
     }
 
-    if (isFavoriteLoading) return;
+    if (!menuItem || isFavoriteLoading) return;
     
+    // Si c'est déjà dans les favoris, on affiche le modal de confirmation
+    if (isLiked) {
+      console.log(`[Favoris] Ouverture du modal de confirmation pour retirer: ${menuItem.name}`);
+      setShowConfirmModal(true);
+      return;
+    }
+    
+    // Sinon on ajoute aux favoris directement
     try {
       setIsFavoriteLoading(true);
+      console.log(`[Favoris] Ajout aux favoris: ${menuItem.name} (id: ${menuItem.id})`);
       
-      if (isLiked) {
-        // Supprimer des favoris
-        const success = await removeFromFavorites(productId);
-        if (success) {
-          setIsLiked(false);
-          Alert.alert("Succès", "Ce plat a été retiré de vos favoris.");
-        } else {
-          Alert.alert("Erreur", "Impossible de retirer ce plat de vos favoris. Veuillez réessayer.");
+      const success = await addToFavorites(menuItem.id);
+      if (success) {
+        // Mettre à jour l'état local
+        setIsLiked(true);
+        console.log(`[Favoris] Ajout réussi: ${menuItem.name}`);
+        
+        // Récupérer l'ID du favori pour la suppression future
+        const favorites = await getUserFavorites();
+        const favorite = favorites.find(fav => fav.id === menuItem.id);
+        if (favorite && favorite.favorite_id) {
+          setFavoriteId(favorite.favorite_id);
+          console.log(`[Favoris] ID du favori récupéré: ${favorite.favorite_id}`);
         }
-      } else {
-        // Ajouter aux favoris
-        const success = await addToFavorites(productId);
-        if (success) {
-          setIsLiked(true);
-          Alert.alert("Succès", "Ce plat a été ajouté à vos favoris.");
-        } else {
-          Alert.alert("Erreur", "Impossible d'ajouter ce plat à vos favoris. Veuillez réessayer.");
-        }
+        
+        setSuccessMessage(`${menuItem.name} a été ajouté à vos favoris`);
+        setShowSuccessModal(true);
       }
     } catch (error) {
-      Alert.alert("Erreur", "Une erreur s'est produite. Veuillez réessayer.");
+      console.log(`[Favoris] Erreur lors de l'ajout: ${error}`);
     } finally {
       setIsFavoriteLoading(false);
     }
+  };
+  
+  // Confirmer la suppression du favori
+  const handleConfirmRemoveFavorite = async () => {
+    if (!menuItem || !favoriteId) {
+      console.log(`[Favoris] Impossible de supprimer - Pas d'ID de favori disponible`);
+      setShowConfirmModal(false);
+      return;
+    }
+    
+    try {
+      setIsFavoriteLoading(true);
+      console.log(`[Favoris] Suppression du favori: ${menuItem.name} (favorite_id: ${favoriteId})`);
+      
+      const success = await removeFromFavorites(favoriteId);
+      if (success) {
+        setIsLiked(false);
+        setFavoriteId(null);
+        console.log(`[Favoris] Suppression réussie: ${menuItem.name}`);
+        setSuccessMessage(`${menuItem.name} a été retiré de vos favoris`);
+        setShowSuccessModal(true);
+      } else {
+        console.log(`[Favoris] Échec de la suppression`);
+      }
+    } catch (error) {
+      console.log(`[Favoris] Erreur lors de la suppression: ${error}`);
+    } finally {
+      setIsFavoriteLoading(false);
+      setShowConfirmModal(false);
+    }
+  };
+  
+  // Annuler la suppression
+  const handleCancelRemoveFavorite = () => {
+    setShowConfirmModal(false);
   };
 
   // Filtrer les suppléments inclus et payants
@@ -540,6 +634,22 @@ const ProductId = () => {
           </View>
 
       </View>
+      
+      {/* Modal de succès pour les favoris */}
+      <SuccessModal
+        visible={showSuccessModal}
+        message={successMessage}
+        onClose={() => setShowSuccessModal(false)}
+      />
+      
+      {/* Modal de confirmation pour la suppression des favoris */}
+      <ConfirmRemoveFavoriteModal
+        visible={showConfirmModal}
+        dishName={menuItem?.name || ""}
+        onConfirm={handleConfirmRemoveFavorite}
+        onCancel={handleCancelRemoveFavorite}
+      />
+      
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: isActive ? 100 : 20 }}
@@ -568,7 +678,6 @@ const ProductId = () => {
                 <TouchableOpacity 
                   className="p-2"
                   onPress={handleFavoriteToggle}
-                  disabled={isFavoriteLoading}
                 >
                   {isFavoriteLoading ? (
                     <ActivityIndicator size="small" color="#F97316" />
