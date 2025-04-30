@@ -59,6 +59,9 @@ export const login = async (data: LoginDto): Promise<AuthResponse> => {
   }
 };
 
+// Variable pour stocker temporairement le dernier OTP reçu (pour le développement uniquement)
+export let lastGeneratedOTP: string | null = null;
+
 // Fonction pour la connexion client par téléphone (demande OTP)
 export const loginCustomer = async (phone: string): Promise<CustomerLoginResponse> => {
   try {
@@ -72,6 +75,13 @@ export const loginCustomer = async (phone: string): Promise<CustomerLoginRespons
     
     const response = await api.post("/v1/auth/customer/login", { phone: apiPhone });
     console.log('Login response:', response.data);
+    
+    // Stocker l'OTP s'il est disponible dans la réponse (pour le développement uniquement)
+    if (response.data && response.data.otp) {
+      lastGeneratedOTP = response.data.otp;
+      console.log('OTP stocké pour auto-remplissage:', lastGeneratedOTP);
+    }
+    
     return response.data;
   } catch (error: any) {
     console.error('Login customer error:', error.response?.data || error.message);

@@ -10,7 +10,7 @@ import GradientButton from "@/components/ui/GradientButton";
 import LoadingModal from "@/components/ui/LoadingModal";
 import Spinner from "@/components/ui/Spinner";
 import ErrorModal from "@/components/ui/ErrorModal";
-import { verifyOTP, requestOTP } from "@/services/api/auth"; 
+import { verifyOTP, requestOTP, lastGeneratedOTP } from "@/services/api/auth"; 
 import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/app/context/AuthContext";
 import { setAuthToken } from "@/services/api/api";
@@ -47,6 +47,24 @@ const OTP: React.FC = () => {
 
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Effet pour auto-remplir l'OTP si disponible (pour le développement uniquement)
+  useEffect(() => {
+    if (lastGeneratedOTP && lastGeneratedOTP.length === 4) {
+      console.log('Auto-remplissage de l\'OTP:', lastGeneratedOTP);
+      setState(prev => ({
+        ...prev,
+        code: lastGeneratedOTP
+      }));
+      
+      // Attendre un court instant avant de valider automatiquement
+      const timer = setTimeout(() => {
+        handleValidateOTP(lastGeneratedOTP);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Gestion du timer pour le renvoi du code
   useEffect(() => {
