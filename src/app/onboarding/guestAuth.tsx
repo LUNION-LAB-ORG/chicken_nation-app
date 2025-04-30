@@ -30,6 +30,13 @@ const GuestAuth: React.FC = () => {
   const translateX = useSharedValue(100);
 
   useEffect(() => {
+    // Rediriger automatiquement les utilisateurs déjà connectés
+    if (isAuthenticated && user) {
+      console.log("Utilisateur déjà connecté, redirection vers l'interface utilisateur");
+      router.replace("/(tabs-user)/");
+      return;
+    }
+
     const timer = setTimeout(() => {
       
       opacity.value = withTiming(1, {
@@ -44,7 +51,7 @@ const GuestAuth: React.FC = () => {
     }, 100);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isAuthenticated, user]);
 
   /**
    * Style animé pour le conteneur principal

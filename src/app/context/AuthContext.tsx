@@ -104,6 +104,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const userData = await AuthStorage.getUserData();
            
             if (userData) {
+              // Log complet des données utilisateur pour le débogage
+              console.log('=============================================');
+              console.log('[AUTH] DONNÉES UTILISATEUR COMPLÈTES:');
+              console.log(JSON.stringify(userData, null, 2));
+              console.log(userData);
+           
+              
               setUser(userData);
             } else {
               setUser(null);

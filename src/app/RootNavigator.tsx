@@ -25,6 +25,12 @@ export default function RootNavigator() {
     ];
 
     if (isAuthenticated && user) {
+      // Si l'utilisateur est sur la page d'accueil ou guestAuth, le rediriger vers l'interface utilisateur
+      if (pathname === "/" || pathname === "/onboarding/guestAuth") {
+        router.replace("/(tabs-user)/");
+        return;
+      }
+      
       if (isProfileComplete(user)) {
         if (pathname === "/(auth)/create-account") {
           router.replace("/(tabs-user)"); // Rediriger vers la partie authentifiée si le profil est complet

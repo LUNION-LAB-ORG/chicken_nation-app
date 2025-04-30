@@ -1,293 +1,99 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React from "react";
 import {
   View,
   Text,
-  Image,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  StyleSheet,
+  TouchableOpacity,
   Alert,
+  Share,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { useLocalSearchParams, router } from "expo-router";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import { FontAwesome } from "@expo/vector-icons";
 import DynamicHeader from "@/components/home/DynamicHeader";
-import GradientButton from "@/components/ui/GradientButton";
-import useCartStore from "@/store/cartStore";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import useReservationStore from "@/store/reservationStore";
-import CustomCheckbox from "@/components/ui/CustomCheckbox";
-import { api } from "@/services/api/api";
-// Remplacer l'import des données mockées par le service de menu
-import { getMenuById } from "@/services/menuService";
-import { useAuth } from "@/app/context/AuthContext";
-import * as Sharing from "expo-sharing";
-import * as FileSystem from 'expo-file-system';
-import { Share } from 'react-native';
-import { addToFavorites, removeFromFavorites, checkIsFavorite, getUserFavorites } from "@/services/api/favorites";
 import SuccessModal from "@/components/ui/SuccessModal";
 import ConfirmRemoveFavoriteModal from "@/components/ui/ConfirmRemoveFavoriteModal";
+import { useAuth } from "@/app/context/AuthContext";
+import { StyleSheet } from "react-native";
+import GradientButton from "@/components/ui/GradientButton";
 
+// Hooks personnalisés
+import useProductDetails from "@/hooks/useProductDetails";
+import useFavorites from "@/hooks/useFavorites";
+import useCartActions from "@/hooks/useCartActions";
+
+// Composants produit
+import ProductHeader from "@/components/product/ProductHeader";
+import ProductInfo from "@/components/product/ProductInfo";
+import ProductSupplements from "@/components/product/ProductSupplements";
+import AddToCartButton from "@/components/product/AddToCartButton";
+
+/**
+ * Page de détail d'un produit
+ * Permet de voir les détails, ajouter aux favoris, personnaliser et ajouter au panier
+ */
 const ProductId = () => {
-  const { productId, offerId } = useLocalSearchParams<{
-    productId: string;
-    offerId?: string;
-  }>();
-  const router = useRouter();
-
-  // État pour stocker les données du menu
-  const [menuItem, setMenuItem] = useState<any>(null);
-  const [promoDetails, setPromoDetails] = useState<any>(null);
-  const [isLoadingMenu, setIsLoadingMenu] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [quantity, setQuantity] = useState(0);
-  const [showCustomizations, setShowCustomizations] = useState(false);
-  const [selectedAccompaniments, setSelectedAccompaniments] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Ajouter un état pour les suppléments sélectionnés avec leurs prix
-  const [selectedSupplements, setSelectedSupplements] = useState<{
-    [key: string]: {
-      name: string;
-      price: string;
-      isIncluded: boolean;
-    }[];
-  }>({});
-
-  // Ajouter un état local pour le "like"
-  const [isLiked, setIsLiked] = useState(false);
-  const [isFavoriteLoading, setIsFavoriteLoading] = useState(false);
-  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+  const { productId } = useLocalSearchParams<{ productId: string }>();
+  const { isAuthenticated, accessToken } = useAuth();
   
-  // État pour le modal de succès
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
+  // Récupération des détails du produit
+  const { menuItem, promoDetails, isLoadingMenu, error } = useProductDetails(productId as string);
   
-  // État pour le modal de confirmation de suppression
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Gestion des favoris
+  const { 
+    isLiked, 
+    isFavoriteLoading, 
+    showConfirmModal, 
+    showSuccessModal: favoriteSuccessModal, 
+    successMessage: favoriteSuccessMessage, 
+    handleFavoriteToggle, 
+    handleConfirmRemoveFavorite, 
+    handleCancelRemoveFavorite, 
+    setShowSuccessModal: setFavoriteSuccessModal 
+  } = useFavorites(productId as string, isAuthenticated, menuItem?.name || "", accessToken);
   
-  // État pour le modal de connexion
-  const [showLoginAlert, setShowLoginAlert] = useState(false);
+  // Gestion du panier
+  const { 
+    quantity, 
+    selectedSupplements, 
+    showCustomizations, 
+    isLoading, 
+    successMessage: cartSuccessMessage,
+    showSuccessModal: cartSuccessModal,
+    handleIncrement, 
+    handleDecrement, 
+    handleSupplementSelect, 
+    isSupplementSelected, 
+    calculateTotalPrice, 
+    handleAddToCart, 
+    setShowCustomizations,
+    setShowSuccessModal: setCartSuccessModal
+  } = useCartActions(productId as string, menuItem, promoDetails);
 
-  // Récupération de l'état de réservation
-  const { isActive } = useReservationStore();
-  const { user, accessToken } = useAuth(); // Ajout de l'authentification réelle
-  const isAuthenticated = user; // Utilisation de l'état d'auth au lieu de isActive
+  // Préparation des suppléments pour l'affichage
+  const { includedSupplements, paidSupplements } = React.useMemo(() => {
+    if (!menuItem?.supplements) return { includedSupplements: [], paidSupplements: [] };
 
-  const addToCart = useCartStore((state) => state.addToCart);
-  const decrementItem = useCartStore((state) => state.decrementItem);
+    const included = [];
+    const paid = [];
 
-  // Charger les données du menu depuis l'API
-  useEffect(() => {
-    const fetchMenuData = async () => {
-      if (!productId) return;
-      
-      try {
-        setIsLoadingMenu(true);
-        setError(null);
-        
-        const menuData = await getMenuById(productId);
-        
-        if (menuData) { 
-          if (menuData.supplements) {
-           
-          }
-          setMenuItem(menuData);
-          
-          // Si le menu est en promotion, définir les détails de promotion
-          if (menuData.is_promotion && menuData.promotion_price) {
-            setPromoDetails({
-              discount: calculateDiscountPercentage(menuData.price, menuData.promotion_price),
-              originalPrice: menuData.price.toString(),
-              discountedPrice: menuData.promotion_price.toString(),
-            });
-          }
-        } else {
-          
-          setError("Ce produit n'est pas disponible.");
-        }
-      } catch (err) {
-        console.error(`❌ Erreur lors du chargement des détails du menu:`, err);
-        setError("Impossible de charger les détails du produit.");
-      } finally {
-        setIsLoadingMenu(false);
-      }
-    };
-    
-    fetchMenuData();
-  }, [productId]);
-
-  // Vérifier si le plat est dans les favoris
-  useEffect(() => {
-    const checkFavoriteStatus = async () => {
-      if (!productId || !isAuthenticated) return;
-      
- 
-      // Vérifier le header d'authentification
-      const authHeader = api.defaults.headers.common["Authorization"];
-    
-      // Afficher le token complet pour comparaison
-      if (authHeader && typeof authHeader === 'string') {
-        const token = authHeader.replace('Bearer ', '');
-       
-      }
-      
-      try {
-        const favorites = await getUserFavorites();
- 
-        
-        // Trouver le favori correspondant au plat actuel
-        const favorite = favorites.find(fav => fav.id === productId);
-        
-        if (favorite) {
-          
-          setIsLiked(true);
-          
-          // Stocker l'ID du favori dans une variable d'état dédiée
-          if (favorite.favorite_id) {
-            setFavoriteId(favorite.favorite_id);
-             
-          }
-        } else {
-          console.log(`[Favoris] Plat non trouvé dans les favoris`);
-          setIsLiked(false);
-          setFavoriteId(null);
-        }
-      } catch (error) {
-        console.log(`[Favoris] Erreur lors de la vérification: ${error}`);
-      }
-    };
-
-    checkFavoriteStatus();
-  }, [productId, isAuthenticated]);
-
-  // Calculer le pourcentage de réduction
-  const calculateDiscountPercentage = (originalPrice: number, discountedPrice: number): number => {
-    if (!originalPrice || !discountedPrice || originalPrice <= 0) return 0;
-    return Math.round(((originalPrice - discountedPrice) / originalPrice) * 100);
-  };
-
-  // Calculer le prix avec réduction
-  const calculateDiscountedPrice = (originalPrice: string, discountPercentage: number): string => {
-    const price = parseFloat(originalPrice.replace(/[^\d.-]/g, ""));
-    if (isNaN(price)) return originalPrice;
-    const discountedPrice = price - (price * discountPercentage) / 100;
-    return `${Math.round(discountedPrice)} FCFA`;
-  };
-
-  // Gérer l'augmentation de la quantité
-  const handleIncrement = () => {
-    setQuantity((prev) => prev + 1);
-  };
-
-  // Gérer la diminution de la quantité
-  const handleDecrement = () => {
-    if (quantity > 0) {
-      setQuantity((prev) => prev - 1);
-    }
-  };
-
-  // Gérer l'ajout au panier
-  const handleAddToCart = () => {
-    if (!menuItem) return;
-    
-    if (quantity > 0) {
-      // Préparer les suppléments sélectionnés
-      const supplements = {};
-      Object.keys(selectedSupplements).forEach((key) => {
-        supplements[key] = selectedSupplements[key].map((item) => item.name);
-      });
-
-      // Ajouter au panier
-      addToCart({
-        id: menuItem.id,
-        name: menuItem.name,
-        price: promoDetails ? parseFloat(promoDetails.discountedPrice) : parseFloat(menuItem.price),
-        quantity,
-        image: menuItem.image,
-        options: supplements,
-      });
-
-      // Réinitialiser la quantité et les suppléments
-      setQuantity(0);
-      setSelectedSupplements({});
-      setShowCustomizations(false);
- 
-    }
-  };
-
-  // Gérer la sélection d'un supplément
-  const handleSupplementSelect = (category: string, supplement: any) => {
-    setSelectedSupplements((prev) => {
-      const categoryItems = prev[category] || [];
-      const existingIndex = categoryItems.findIndex(
-        (item) => item.name === supplement.name,
-      );
-
-      if (existingIndex >= 0) {
-        // Si l'élément existe déjà, le supprimer
-        return {
-          ...prev,
-          [category]: categoryItems.filter((_, i) => i !== existingIndex),
-        };
+    Object.entries(menuItem.supplements).forEach(([category, details]: [string, any]) => {
+      if (details.isIncluded) {
+        included.push({ ...details, category, type: category === "FOOD" ? "Accompagnements" : category === "DRINK" ? "Boissons" : category === "ACCESSORY" ? "Extras" : category });
       } else {
-        // Sinon, l'ajouter
-        return {
-          ...prev,
-          [category]: [
-            ...categoryItems,
-            { 
-              name: supplement.name, 
-              price: supplement.price, 
-              isIncluded: supplement.isIncluded || false 
-            },
-          ],
-        };
+        paid.push({ ...details, category, type: category === "FOOD" ? "Accompagnements" : category === "DRINK" ? "Boissons" : category === "ACCESSORY" ? "Extras" : category });
       }
     });
-  };
 
-  // Vérifier si un supplément est sélectionné
-  const isSupplementSelected = (category: string, name: string): boolean => {
-    const categoryItems = selectedSupplements[category] || [];
-    return categoryItems.some((item) => item.name === name);
-  };
-
-  // Calculer le prix total
-  const totalPrice = useMemo(() => {
-    if (!menuItem) return "0 FCFA";
-
-    let basePrice = promoDetails
-      ? parseFloat(promoDetails.discountedPrice.replace(/[^\d.-]/g, ""))
-      : parseFloat(menuItem.price);
-
-    if (isNaN(basePrice)) basePrice = 0;
-
-    // Ajouter le prix des suppléments non inclus
-    let supplementsPrice = 0;
-    Object.values(selectedSupplements).forEach((items) => {
-      items.forEach((item) => {
-        if (!item.isIncluded) {
-          const itemPrice = parseFloat(item.price.replace(/[^\d.-]/g, ""));
-          if (!isNaN(itemPrice)) {
-            supplementsPrice += itemPrice;
-          }
-        }
-      });
-    });
-
-    const total = (basePrice + supplementsPrice) * quantity;
-    return `${Math.round(total)} FCFA`;
-  }, [menuItem, promoDetails, selectedSupplements, quantity]);
+    return { includedSupplements: included, paidSupplements: paid };
+  }, [menuItem?.supplements]);
 
   // Gérer le partage du produit
   const handleShare = async () => {
     if (!menuItem) return;
 
     try {
-      setIsLoading(true);
       const message = `Découvre ${menuItem.name} sur Chicken Nation ! ${
         promoDetails ? `En promotion à ${promoDetails.discountedPrice} !` : ""
       }`;
@@ -299,281 +105,12 @@ const ProductId = () => {
       });
     } catch (error) {
       console.error("Erreur lors du partage:", error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Gérer l'ajout/suppression des favoris
-  const handleFavoriteToggle = async () => {
-    // Vérifier si l'utilisateur est connecté
-    if (!isAuthenticated) {
-      Alert.alert(
-        "Connexion requise",
-        "Veuillez vous connecter pour ajouter ce plat à vos favoris.",
-        [
-          { text: "Annuler", style: "cancel" },
-          { text: "Se connecter", onPress: () => router.push("/(tabs-guest)/login") }
-        ]
-      );
-      return;
-    }
-
-    if (!menuItem || isFavoriteLoading) return;
-    
-    // Si c'est déjà dans les favoris, on affiche le modal de confirmation
-    if (isLiked) {
-      setShowConfirmModal(true);
-      return;
-    }
-    
-    // Sinon on ajoute aux favoris directement
-    try {
-      setIsFavoriteLoading(true);
-      
-      const success = await addToFavorites(menuItem.id);
-      if (success) {
-        // Mettre à jour l'état local
-        setIsLiked(true);
-        
-        // Récupérer l'ID du favori pour la suppression future
-        const favorites = await getUserFavorites();
-        const favorite = favorites.find(fav => fav.id === menuItem.id);
-        if (favorite && favorite.favorite_id) {
-          setFavoriteId(favorite.favorite_id);
-          
-        }
-        
-        setSuccessMessage(`${menuItem.name} a été ajouté à vos favoris`);
-        setShowSuccessModal(true);
-      }
-    } catch (error) {
-      console.log(`[Favoris] Erreur lors de l'ajout: ${error}`);
-    } finally {
-      setIsFavoriteLoading(false);
-    }
-  };
-  
-  // Confirmer la suppression du favori
-  const handleConfirmRemoveFavorite = async () => {
-    if (!menuItem || !favoriteId) {
-      console.log(`[Favoris] Impossible de supprimer - Pas d'ID de favori disponible`);
-      setShowConfirmModal(false);
-      return;
-    }
-    
-    try {
-      setIsFavoriteLoading(true);
-      
-      const success = await removeFromFavorites(favoriteId);
-      if (success) {
-        setIsLiked(false);
-        setFavoriteId(null);
-        setSuccessMessage(`${menuItem.name} a été retiré de vos favoris`);
-        setShowSuccessModal(true);
-      } else {
-        console.log(`[Favoris] Échec de la suppression`);
-      }
-    } catch (error) {
-      console.log(`[Favoris] Erreur lors de la suppression: ${error}`);
-    } finally {
-      setIsFavoriteLoading(false);
-      setShowConfirmModal(false);
-    }
-  };
-  
-  // Annuler la suppression
-  const handleCancelRemoveFavorite = () => {
-    setShowConfirmModal(false);
-  };
-
-  // Filtrer les suppléments inclus et payants
-  const { includedSupplements, paidSupplements } = useMemo(() => {
-    if (!menuItem?.supplements) {
-      return { includedSupplements: [], paidSupplements: [] };
-    }
-
-    const included = [];
-    const paid = [];
-
-    Object.entries(menuItem.supplements).forEach(
-      ([category, details]: [string, any]) => {
-        if (details.isIncluded) {
-          included.push({ ...details, category, type: category === "FOOD" 
-            ? "Accompagnements" 
-            : category === "DRINK" 
-              ? "Boissons" 
-              : category === "ACCESSORY" 
-                ? "Extras" 
-                : category });
-        } else {
-          paid.push({ ...details, category, type: category === "FOOD" 
-            ? "Accompagnements" 
-            : category === "DRINK" 
-              ? "Boissons" 
-              : category === "ACCESSORY" 
-                ? "Extras" 
-                : category });
-        }
-      },
-    );
-
-    return { includedSupplements: included, paidSupplements: paid };
-  }, [menuItem?.supplements]);
-
-  // Affichage des suppléments inclus
-  const renderIncludedSupplements = () => {
-    if (includedSupplements.length === 0) return null;
-
-    return (
-      <View className="mt-4 bg-gray-100 p-4 rounded-3xl">
-        <Text className="text-lg font-sofia-light text-black/50">
-          Ce qui est inclus
-        </Text>
-        {includedSupplements.map((supp, index) => (
-          <View key={index} className="mt-2">
-            <Text className="text-lg font-sofia-light text-black/70">
-              {supp.required ? "1 x " : ""}
-              {supp.type}
-            </Text>
-            {supp.items && supp.items.map((item, idx) => (
-              <Text
-                key={idx}
-                className="ml-4 text-sm font-sofia-light text-black/50"
-              >
-                • {item.name}
-              </Text>
-            ))}
-          </View>
-        ))}
-      </View>
-    );
-  };
-
-  // Section de personnalisation
-  const renderCustomizationSection = () => {
-    if (paidSupplements.length === 0) return null;
-
-    return (
-      <View className="mt-4 bg-gray-100 p-4 mb-44 rounded-3xl">
-        <TouchableOpacity
-          className="flex-row justify-between items-center"
-          onPress={() => setShowCustomizations(!showCustomizations)}
-        >
-          <Text className="text-lg font-sofia-light text-black/70">
-            Personnaliser
-          </Text>
-          <Image
-            source={
-              showCustomizations
-                ? require("../../../assets/icons/close.png")
-                : require("../../../assets/icons/arrow-right-2.png")
-            }
-            style={{ width: 24, height: 24, resizeMode: "contain" }}
-          />
-        </TouchableOpacity>
-
-        {showCustomizations && (
-          <View className="mt-4">{renderSupplements()}</View>
-        )}
-      </View>
-    );
-  };
-
-  // Affichage des suppléments disponibles
-  const renderSupplements = () => {
-    if (!menuItem?.supplements) return null;
-
-    return Object.entries(menuItem.supplements).map(
-      ([category, details]: [string, any]) => (
-        <View key={category} className="mt-4 bg-gray-100 p-4 rounded-3xl">
-          <Text className="text-lg font-sofia-medium text-black/70">
-            {details.type}
-            {details.isIncluded && (
-              <Text className="text-sm font-sofia-light text-green-600">
-                {" "}
-                (Inclus)
-              </Text>
-            )}
-          </Text>
-
-          {details.items && details.items.map((item: any) => (
-            <View
-              key={item.id}
-              className="flex-row items-center justify-between py-1 border-b border-gray-100"
-            >
-              <View className="flex-1">
-                <Text className="font-urbanist-medium">
-                  {item.name} {!details.isIncluded && (
-                    <Text className="text-gray-700 font-urbanist-bold">- {item.price} FCFA</Text>
-                  )}
-                </Text>
-              </View>
-              <CustomCheckbox
-                isChecked={isSupplementSelected(category, item.name)}
-                onPress={() =>
-                  handleSupplementSelect(category, {
-                    ...item,
-                    isIncluded: details.isIncluded || false,
-                  })
-                }
-              />
-            </View>
-          ))}
-        </View>
-      ),
-    );
-  };
-
-  /**
-   * Redirige vers la page des commentaires
-   */
+  // Gérer la redirection vers les commentaires
   const handleViewComments = () => {
     router.push("/(authenticated-only)/comments");
-  };
-
-  /**
-   * Gère le clic sur "Préparer" - ajoute au panier puis redirige après un délai
-   */
-  const handlePrepare = async () => {
-    // S'assurer qu'il y a au moins un produit dans le panier
-    if (quantity === 0) {
-      setQuantity(1);
-
-      // Ajouter l'article au panier
-      const item = {
-        id: menuItem.id,
-        name: menuItem.name,
-        price: promoDetails ? parseFloat(promoDetails.discountedPrice) : parseFloat(menuItem.price),
-        quantity: 1,
-        image: menuItem.image,
-        description: menuItem.description,
-        extras: Object.values(selectedSupplements).flat().map(s => s.name),
-      };
-      addToCart(item);
-    }
-
-    // Désactiver le bouton et montrer l'état de chargement
-    setIsLoading(true);
-
-    // Attendre 5 secondes
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Rediriger vers l'écran de finalisation de réservation
-    router.push("/(authenticated-only)/reservation/finreservation");
-  };
-
-  /**
-   * Gère le clic sur le bouton "Suivant" en mode réservation
-   */
-  const handleNext = () => {
-    // Si l'utilisateur n'a rien ajouté au panier, ajouter au moins 1 produit
-    if (quantity === 0) {
-      handleIncrement();
-    }
-
-    // Rediriger vers la finalisation
-    router.push("/(authenticated-only)/reservation/finreservation");
   };
 
   // Afficher un indicateur de chargement pendant le chargement des données
@@ -596,7 +133,7 @@ const ProductId = () => {
         <CustomStatusBar />
         <Text className="text-red-500 font-urbanist-bold text-lg mb-2">Erreur</Text>
         <Text className="text-gray-600 font-urbanist-medium text-center">{error || "Produit non trouvé"}</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
           onPress={() => router.back()}
         >
@@ -606,30 +143,38 @@ const ProductId = () => {
     );
   }
 
+  // Calculer le prix total
+  const { formattedTotal } = calculateTotalPrice();
+
   return (
     <View className="flex-1 bg-white">
       <StatusBar style="dark" />
-      <View className="fixed   z-50">
+      <View className="fixed z-50">
         <CustomStatusBar />
         <View className="px-6 -mt-6 mb-4">
-            <DynamicHeader
-              displayType="back-with-logo"
-              showCart={true} 
-              showProgressBar={isActive}
-              progressPercent={70}
-              reservationContext={true}
-            />
-          </View>
-
+          <DynamicHeader
+            displayType="back-with-logo"
+            showCart={true}
+            showProgressBar={false}
+            progressPercent={0}
+          />
+        </View>
       </View>
-      
+
       {/* Modal de succès pour les favoris */}
       <SuccessModal
-        visible={showSuccessModal}
-        message={successMessage}
-        onClose={() => setShowSuccessModal(false)}
+        visible={favoriteSuccessModal}
+        message={favoriteSuccessMessage}
+        onClose={() => setFavoriteSuccessModal(false)}
       />
-      
+
+      {/* Modal de succès pour le panier */}
+      <SuccessModal
+        visible={cartSuccessModal}
+        message={cartSuccessMessage}
+        onClose={() => setCartSuccessModal(false)}
+      />
+
       {/* Modal de confirmation pour la suppression des favoris */}
       <ConfirmRemoveFavoriteModal
         visible={showConfirmModal}
@@ -637,173 +182,58 @@ const ProductId = () => {
         onConfirm={handleConfirmRemoveFavorite}
         onCancel={handleCancelRemoveFavorite}
       />
-      
+
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: isActive ? 100 : 20 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
       >
         <View className="px-6 mt-2">
-          {/* Header standard avec logo et panier */}
-        
-          {/* Contenu du produit */}
-          <View  >
-            {/* Image et boutons d'action */}
-            <View 
-              className="relative rounded-3xl overflow-hidden"
-              style={{ 
-                borderWidth: 1,
-                borderColor: '#FDE9DA', 
-                borderStyle: 'solid',
-                marginBottom: 10
-              }}
-            >
-              <Image
-                source={{ uri: menuItem.image }}
-                className="w-full h-[300px] "
-                style={{ resizeMode: "contain" }}
-              />
-              <View className="absolute bg-white border-[1px] border-gray-400 px-3 py-1.5 rounded-2xl top-4 right-4 flex-row  ">
-                <TouchableOpacity 
-                  className="p-2"
-                  onPress={handleFavoriteToggle}
-                >
-                  {isFavoriteLoading ? (
-                    <ActivityIndicator size="small" color="#F97316" />
-                  ) : (
-                    <FontAwesome name={isLiked ? "heart" : "heart-o"} size={20} color="#F97316" />
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity className="p-2 ml-1" onPress={handleShare}>
-                  <Image
-                    source={require("../../../assets/icons/share.png")}
-                    style={{ width: 20, height: 20, resizeMode: "contain" }}
-                  />
-                </TouchableOpacity>
-              </View>
-              
-              {/* Badge de promotion */}
-              {promoDetails && (
-                <View className="absolute top-4 left-4 bg-red-500 px-2 py-1 rounded-lg">
-                  <Text className="text-white font-urbanist-bold text-xs">
-                    -{promoDetails.discount}%
-                  </Text>
-                </View>
-              )}
-            </View>
+          {/* Image et boutons d'action */}
+          <ProductHeader
+            image={menuItem.image}
+            isLiked={isLiked}
+            isPromo={!!promoDetails}
+            discountPercentage={promoDetails?.discountPercentage}
+            onFavoriteToggle={handleFavoriteToggle}
+            isFavoriteLoading={isFavoriteLoading}
+            onShare={handleShare}
+          />
 
-            {/* Titre et évaluations */}
-            <View className="flex-row justify-center items-center mt-8 mb-4">
-              <Text className="text-3xl text-center font-urbanist-bold uppercase text-black">
-                {menuItem.name}
-              </Text>
-            </View>
-            <View className="flex-row items-center mt-2">
-              <FontAwesome name="star" size={16} color="#FFD700" />
-              <Text className="ml-1 text-[13px] font-sofia-regular text-slate-500">
-                {menuItem.rating}
-              </Text>
-              <TouchableOpacity 
-                className="ml-4" 
-                onPress={isAuthenticated ? handleViewComments : undefined}
-              >
-                <Text className="text-[13px] font-sofia-regular underline text-slate-500">
-                  Voir les commentaires
-                </Text>
-              </TouchableOpacity>
-              {!isAuthenticated && (
-                <TouchableOpacity onPress={() => router.push("/(tabs-guest)/login")} className="ml-4">
-                  <Text className="text-[11px] font-sofia-semibold uppercase bg-yellow p-2 rounded-lg text-slate-800">
-                    Connecte-toi pour voir
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
+          {/* Informations du produit */}
+          <ProductInfo
+            name={menuItem.name}
+            rating={menuItem.rating}
+            price={promoDetails ? promoDetails.discountedPrice : menuItem.price}
+            originalPrice={promoDetails ? menuItem.price : undefined}
+            isPromo={!!promoDetails}
+            isAuthenticated={isAuthenticated}
+            onViewComments={handleViewComments}
+            quantity={quantity}
+            onIncrement={handleIncrement}
+            onDecrement={handleDecrement}
+            description={menuItem.description}
+          />
 
-            {/* Prix et quantité */}
-            <View className="flex-row justify-between items-center mt-6">
-              <View>
-                {promoDetails ? (
-                  <>
-                    <Text className="text-sm font-urbanist-regular text-gray-400 line-through">
-                      {promoDetails.originalPrice} FCFA
-                    </Text>
-                    <Text className="text-2xl font-urbanist-regular text-orange-500">
-                      {promoDetails.discountedPrice} FCFA
-                    </Text>
-                    <Text className="text-sm font-urbanist-regular text-green-500">
-                      -{promoDetails.discount}%
-                    </Text>
-                  </>
-                ) : (
-                  <Text className="text-2xl font-urbanist-regular text-orange-500">
-                    {menuItem.price} FCFA
-                  </Text>
-                )}
-              </View>
-              <View className="flex-row items-center ml-4">
-                <TouchableOpacity
-                  className="border-orange-500 border-2 rounded-full p-[9px] py-[7px]"
-                  onPress={handleDecrement}
-                >
-                  <FontAwesome name="minus" size={18}  className="text-sm" color="#f97316" />
-                </TouchableOpacity>
-                <Text className="mx-4 text-lg font-sofia-light text-black/70">
-                  {quantity.toString().padStart(2, "0")}
-                </Text>
-                <TouchableOpacity onPress={handleIncrement}>
-                  <Image
-                    source={require("../../../assets/icons/plus-rounded.png")}
-                    style={{ width: 38, height: 38, resizeMode: "contain" }}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Description */}
-            <Text className="mt-6 text-[16px] font-sofia-light text-[#595959]">
-              {menuItem.description}
-            </Text>
-
-            {/* Suppléments inclus */}
-            {renderIncludedSupplements()}
-
-            {/* Personnalisations */}
-            {renderCustomizationSection()}
-          </View>
+          {/* Suppléments */}
+          <ProductSupplements
+            includedSupplements={includedSupplements}
+            paidSupplements={paidSupplements}
+            showCustomizations={showCustomizations}
+            onToggleCustomizations={() => setShowCustomizations(!showCustomizations)}
+            isSupplementSelected={isSupplementSelected}
+            onSupplementSelect={handleSupplementSelect}
+          />
         </View>
       </ScrollView>
 
-      {/* Boutons de navigation en bas - adaptatifs selon le contexte */}
+      {/* Bouton "Ajouter au panier" */}
       {isAuthenticated ? (
         <View style={styles.bottomButtons}>
-          <GradientButton
-            onPress={handlePrepare}
-            disabled={isLoading}
-            className="flex-1"
-          >
-            <View className="flex-row items-center justify-center">
-              {isLoading ? (
-                <ActivityIndicator
-                  color="white"
-                  size="small"
-                  style={{ marginRight: 8 }}
-                />
-              ) : (
-                <Image
-                  source={require("../../../assets/icons/cook.png")}
-                  style={{
-                    width: 24,
-                    height: 24,
-                    resizeMode: "contain",
-                    marginRight: 8,
-                  }}
-                />
-              )}
-              <Text className="text-white text-lg font-urbanist-medium">
-                {isLoading ? "Préparation..." : "Préparer"}
-              </Text>
-            </View>
-          </GradientButton>
+          <AddToCartButton
+            isLoading={isLoading}
+            totalPrice={formattedTotal}
+            onPress={handleAddToCart}
+          />
         </View>
       ) : (
         // Bouton standard pour visiteurs non authentifiés
@@ -829,31 +259,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "white",
     padding: 16,
+    backgroundColor: "white",
     borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    elevation: 4,
+    borderTopColor: "#f3f4f6",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  cancelButton: {
-    flex: 1,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#F17922",
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 14,
-  },
-  cancelButtonText: {
-    color: "#F17922",
-    fontSize: 16,
-    fontFamily: "Urbanist-Medium",
-  },
+    shadowRadius: 4,
+    elevation: 5,
+  }
 });
 
 export default ProductId;

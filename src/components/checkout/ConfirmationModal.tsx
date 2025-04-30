@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, Modal, Image } from "react-native";
+import { View, Text, TouchableOpacity, Modal, Image, ActivityIndicator } from "react-native";
 import { X } from "lucide-react-native";
 import GradientButton from "@/components/ui/GradientButton";
 import { PaymentMethod, paymentMethods } from "./types";
@@ -9,6 +9,7 @@ type ConfirmationModalProps = {
   selectedPayment: PaymentMethod | null;
   onClose: () => void;
   onConfirm: () => void;
+  isLoading?: boolean;
 };
 
 const getPaymentInstructions = (method: PaymentMethod): string => {
@@ -40,6 +41,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   selectedPayment,
   onClose,
   onConfirm,
+  isLoading = false,
 }) => {
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -83,10 +85,15 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               )}
             </View>
 
-            <GradientButton onPress={onConfirm} className="w-full">
-              <Text className="text-white text-lg font-urbanist-medium">
-                Procéder
-              </Text>
+            <GradientButton onPress={onConfirm} className="w-full" disabled={isLoading}>
+              <View className="flex-row items-center justify-center gap-2">
+                {isLoading ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : null}
+                <Text className="text-white text-lg font-urbanist-medium">
+                  {isLoading ? "Traitement..." : "Procéder"}
+                </Text>
+              </View>
             </GradientButton>
           </View>
         </TouchableOpacity>

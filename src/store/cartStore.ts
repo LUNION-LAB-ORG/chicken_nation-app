@@ -219,6 +219,27 @@ const useCartStore = create<CartStore>((set, get) => ({
     set({ isLoading: true });
     
     set((state) => {
+      // Si la quantité est 0, on supprime l'article au lieu de mettre à jour sa quantité
+      if (quantity === 0) {
+        const updatedItems = state.items.filter(item => item.id !== itemId);
+        
+        const newTotalItems = updatedItems.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        );
+        const newTotalAmount = updatedItems.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0,
+        );
+
+        return {
+          items: updatedItems,
+          totalItems: newTotalItems,
+          totalAmount: newTotalAmount,
+        };
+      }
+      
+      // Sinon, on met à jour la quantité normalement
       const updatedItems = state.items.map((item) => {
         if (item.id === itemId) {
           return { ...item, quantity };
