@@ -1,4 +1,4 @@
-import type React from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -10,19 +10,13 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import {
-  Menu,
-  CalendarRange,
-  MapPin,
-  ShoppingBag,
-  Gift,
-  Heart,
-  Bell,
-  HelpCircle,
-  UserPlus,
-  Settings,
-  LogOut,
-  ChevronDown,
+  Heart, 
+  Settings, 
 } from "lucide-react-native";
+import { useAuth } from "@/app/context/AuthContext";
+import ConfirmLogoutModal from "./ConfirmLogoutModal";
+import useCartStore from "@/store/cartStore";
+import { formatImageUrl } from "@/utils/imageHelpers";
 
 interface BottomSheetModalProps {
   isVisible: boolean;
@@ -33,6 +27,10 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   isVisible,
   onClose,
 }) => {
+  const { user, logout } = useAuth();
+  const clearCart = useCartStore((state) => state.clearCart);
+  const [showConfirmLogout, setShowConfirmLogout] = React.useState(false);
+
   const menuItems = [
     {
       icon: (
@@ -73,7 +71,7 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       ),
       title: "Mes commandes",
       route: "/(authenticated-only)/orders",
-    },
+    }, 
     {
       icon: (
         <Image
@@ -131,10 +129,20 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     router.push(route as any);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    setShowConfirmLogout(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowConfirmLogout(false);
+    await logout();
+    await clearCart();
     onClose();
-    // Ajoutez ici votre logique de déconnexion
-    router.push("(tabs-guest)/login");
+    router.replace("(auth)/authwithphone");
+  };
+
+  const cancelLogout = () => {
+    setShowConfirmLogout(false);
   };
 
   return (
@@ -167,14 +175,21 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           </View>
           <View className="flex-row items-center mt-6 ml-4">
             <Image
-              source={require("../../assets/icons/default-avatar.png")}
+              source={
+                user?.image
+                  ? { uri: formatImageUrl(user.image) }
+                  : require("../../assets/icons/default-avatar.png")
+              }
               className="w-16 h-16 rounded-full"
+              style={{ resizeMode: "cover" }}
             />
             <View className="ml-3">
               <Text className="text-gray-900 text-xl font-sofia-medium">
-                User name
+                {user ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : "User name"}
               </Text>
-              <Text className="text-gray-500 text-sm">username@gmail.com</Text>
+              <Text className="text-gray-500 text-sm">
+                +225 {user?.phone || ""}
+              </Text>
             </View>
           </View>
         </View>
@@ -212,6 +227,11 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
             </Text>
           </TouchableOpacity>
         </View>
+        <ConfirmLogoutModal
+          visible={showConfirmLogout}
+          onConfirm={confirmLogout}
+          onCancel={cancelLogout}
+        />
       </View>
 
       {/* Section version en dehors du padding principal, avec fond slate-100 */}

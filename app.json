@@ -19,14 +19,15 @@
             "./src/assets/fonts/Urbanist-Regular.ttf",
             "./src/assets/fonts/Blocklyn-Grunge.otf",
             "./src/assets/fonts/Blocklyn-Condensed.otf",
-            "./src/assets/fonts/Sofia-Regular.ttf",
-            "./src/assets/fonts/Sofia-Medium.ttf",
-            "./src/assets/fonts/Sofia-Bold.ttf",
-            "./src/assets/fonts/Sofia-Light.ttf",
-            "./src/assets/fonts/Sofia-Regular.ttf"
+            "./src/assets/fonts/SofiaProRegular.ttf",
+            "./src/assets/fonts/SofiaProMedium.ttf",
+            "./src/assets/fonts/SofiaProBold.ttf",
+            "./src/assets/fonts/SofiaProLight.ttf",
+            "./src/assets/fonts/SofiaProSemiBold.ttf"
           ]
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "splash": {
       "image": "./src/assets/icons/logo.png",
@@ -64,11 +65,15 @@
     "name": "chicken-nation",
     "slug": "chicken-nation",
     "version": "1.0.0",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "extra": {
+      "router": {
+        "origin": false
+      },
       "eas": {
-        "projectId": "chicken-nation"
+        "projectId": "12d22b15-cc96-4f3a-82d4-219f16de9176"
       }
-    }
+    },
+    "owner": "ambroisek"
   }
 }

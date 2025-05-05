@@ -1,111 +1,141 @@
-import React, { useState, useMemo } from "react";
-import { View, Text, Image, TouchableOpacity, ScrollView } from "react-native";
+import React, { useState, useMemo, useEffect } from "react";
+import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import { users, menuItems } from "@/data/MockedData";
-import type { MenuItem } from "@/types";
+import useOrderStore from "@/store/orderStore";
+import { OrderResponse, OrderStatus, OrderType } from "@/services/api/orders";
+import { formatDate } from "@/utils/dateHelpers";
+import { AuthStorage } from "@/services/storage/auth-storage";
+import { formatImageUrl } from "@/utils/imageHelpers";
 
 /**
  * Types définissant les filtres et statuts des commandes
  */
 type FilterType = "en_cours" | "termines" | "annuler";
-type OrderStatus = "delivered" | "pending" | "cancelled";
-
-/**
- * Interface définissant la structure d'un article dans une commande
- */
-interface OrderItem {
-  productId: string;
-  quantity: number;
-  supplements?: {
-    boissons?: string[];
-    sauces?: string[];
-  };
-}
-
-/**
- * Interface définissant la structure complète d'une commande
- */
-interface Order {
-  id: string;
-  userId: string;
-  restaurantId: string;
-  items: OrderItem[];
-  total: string;
-  status: OrderStatus;
-  date: string;
-  deliveryAddress: string;
-  paymentMethod: string;
-}
 
 /**
  * Mapping des statuts de commande avec leurs textes et couleurs associés
  */
-const statusMapping: Record<OrderStatus, { text: string; color: string }> = {
-  delivered: { text: "Livré", color: "text-green-500" },
-  pending: { text: "En cours", color: "text-orange-500" },
-  cancelled: { text: "Annulé", color: "text-red-500" },
+const statusMapping: Record<string, { text: string; color: string }> = {
+  PENDING: { text: "En attente", color: "text-orange-500" },
+  CONFIRMED: { text: "Confirmé", color: "text-blue-500" },
+  PREPARING: { text: "En préparation", color: "text-purple-500" },
+  READY: { text: "Prêt", color: "text-green-500" },
+  DELIVERED: { text: "Livré", color: "text-green-500" },
+  CANCELLED: { text: "Annulé", color: "text-red-500" },
+  IN_PROGRESS: { text: "En cours", color: "text-blue-500" },
+  PICKED_UP: { text: "En cours", color: "text-blue-500" },
 };
 
 /**
  * Composant représentant une carte de commande individuelle
  */
-const OrderCard: React.FC<{ order: Order }> = ({ order }) => {
+const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   const router = useRouter();
   
-  // Récupère les détails des articles de la commande avec leurs informations complètes
-  const orderItems = useMemo(() => {
-    return order.items.map(item => {
-      const menuItem = menuItems.find(menu => menu.id === item.productId);
-      return {
-        ...item,
-        menuDetails: menuItem,
-      };
-    });
-  }, [order.items]);
-
+  // Récupérer le premier article de la commande pour l'affichage
+  const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
+  
   /**
    * Formate la date au format "Initié le JJ.MM.AAAA"
    */
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return `Initié le ${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
-  };
+  const formattedDate = useMemo(() => {
+    return `Initié le ${formatDate(order.created_at)}`;
+  }, [order.created_at]);
 
   /**
    * Gère la redirection vers l'écran du produit pour commander à nouveau
    */
   const handleReorder = () => {
-    if (orderItems[0]?.menuDetails?.id) {
-      router.push(`/(common)/products/${orderItems[0].menuDetails.id}`);
+    if (firstItem?.dish?.id) {
+      router.push(`/(common)/products/${firstItem.dish.id}`);
     }
   };
+
+  /**
+   * Détermine si la commande est terminée (livrée ou annulée)
+   */
+  const isCompleted = order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED;
+  
+  /**
+   * Détermine si la commande est en cours
+   */
+  const isPending = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus);
+
+  /**
+   * Extraire le moyen de paiement depuis la note
+   */
+  const extractPaymentMethod = (note: string | undefined): string => {
+    if (!note) return "Mobile Money";
+    
+    const lowerNote = note.toLowerCase();
+    if (lowerNote.includes("wave")) return "Wave";
+    if (lowerNote.includes("orange money") || lowerNote.includes("orange")) return "Orange Money";
+    if (lowerNote.includes("moov money") || lowerNote.includes("moov")) return "Moov Money";
+    if (lowerNote.includes("mtn") || lowerNote.includes("mtn money")) return "MTN Mobile Money";
+    if (lowerNote.includes("carte") || lowerNote.includes("card") || lowerNote.includes("visa") || lowerNote.includes("mastercard")) return "Carte bancaire";
+    if (lowerNote.includes("espèce") || lowerNote.includes("espece") || lowerNote.includes("cash")) return "Espèces";
+    
+    return "Mobile Money";
+  };
+  
+  // Utiliser les données directement depuis la structure de la commande
+  const paymentMethod = extractPaymentMethod(order.note);
+  
+  /**
+   * Formater le prix avec séparateur de milliers
+   */
+  const formatPrice = (price: number | undefined) => {
+    if (price === undefined || price === null) return "0 FCFA";
+    return `${price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} FCFA`;
+  };
+
+  // Récupérer les données du plat principal
+  const dishName = firstItem?.dish?.name || "Commande";
+  const dishImageRaw = firstItem?.dish?.image || null;
+  const dishImage = dishImageRaw ? formatImageUrl(dishImageRaw) : null;
+  
+  // Récupérer le prix correct
+  const orderPrice = order.net_amount || order.amount || 0;
 
   return (
     <View className="bg-white rounded-2xl mb-4">
       {/* En-tête avec image et détails */}
       <View className="flex-row p-4 items-center gap-4">
-        <Image
-          source={orderItems[0]?.menuDetails?.image}
-          className="w-20 h-20 rounded-2xl border-[1px] border-orange-200"
-        />
+        {/* Image du plat - toujours afficher une image */}
+        <View className="w-24 h-24 rounded-xl overflow-hidden border-[1px] border-orange-100">
+          {dishImage ? (
+            <Image 
+              source={{ uri: dishImage }} 
+              className="w-full h-full"
+              defaultSource={require("@/assets/images/food2.png")}
+              style={{ resizeMode: "contain" }}
+            />
+          ) : (
+            <Image 
+              source={require("@/assets/images/food2.png")} 
+              className="w-full h-full"
+            />
+          )}
+        </View>
+        
         <View className="flex-1">
           <Text className="font-sofia-medium text-base text-gray-900">
-            {orderItems[0]?.menuDetails?.name}
+            {dishName}
           </Text>
           {/* Affiche la date pour les commandes terminées ou annulées */}
-          {(order.status === "delivered" || order.status === "cancelled") && (
+          {isCompleted && (
             <Text className="text-gray-400 text-sm font-sofia-regular mt-1">
-              {formatDate(order.date)}
+              {formattedDate}
             </Text>
           )}
           <View className="flex-row items-center gap-4 mt-1">
-            <Text className="font-sofia-bold text-orange-500">
-              {order.total} FCFA
+            <Text className="font-sofia-medium text-[#F97316]">
+              {formatPrice(orderPrice)}
             </Text>
             {/* Affichage conditionnel du statut de la commande */}
-            {order.status === "cancelled" ? (
+            {order.status === OrderStatus.CANCELLED ? (
               <View className="flex-row items-center ml-10">
                 <View className="w-2 h-2 rounded-full bg-red-500 mr-2" />
                 <Text className="text-red-500 text-sm font-sofia-regular">
@@ -116,7 +146,7 @@ const OrderCard: React.FC<{ order: Order }> = ({ order }) => {
               <View className="flex-row items-center ml-10">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
                 <Text className="text-green-500 text-sm font-sofia-regular">
-                  {order.paymentMethod === 'mobile_money' ? 'Payé via Mobile Money' : 'Payé via Carte bancaire'}
+                  {`Payé via ${paymentMethod}`}
                 </Text>
               </View>
             )}
@@ -125,15 +155,15 @@ const OrderCard: React.FC<{ order: Order }> = ({ order }) => {
       </View>
 
       {/* Boutons d'action - uniquement pour les commandes non annulées */}
-      {order.status !== "cancelled" && (
+      {order.status !== OrderStatus.CANCELLED && (
         <View className="px-4 pb-4">
-          {order.status === "delivered" ? (
+          {order.status === OrderStatus.DELIVERED ? (
             <View className="flex-row gap-4">
               <TouchableOpacity 
-                className="py-3 px-6 rounded-xl bg-orange-500 self-start"
+                className="py-[6px] px-[32px] rounded-full items-center justify-center bg-[#F97316] self-start"
                 onPress={handleReorder}
               >
-                <Text className="text-white font-sofia-medium">
+                <Text className="text-white text-[14px] font-sofia-regular">
                   Commander à nouveau
                 </Text>
               </TouchableOpacity>
@@ -142,14 +172,14 @@ const OrderCard: React.FC<{ order: Order }> = ({ order }) => {
           ) : (
             <View className="flex-row gap-4">
               <TouchableOpacity 
-                className="flex-1 py-3 rounded-xl border border-orange-500"
+                className="flex-1 py-[6px]  rounded-full border-[1px] border-[#F97316]"
               >
-                <Text className="text-center text-orange-500 font-sofia-medium">
+                <Text className="text-center text-[#F97316] font-sofia-medium">
                   Annuler
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                className="flex-1 py-3 rounded-xl bg-orange-500"
+                className="flex-1 py-[6px]  rounded-full bg-[#F97316]"
               >
                 <Text className="text-center text-white font-sofia-medium">
                   Suivie de commande
@@ -170,13 +200,13 @@ const EmptyState: React.FC<{ activeFilter: FilterType }> = ({ activeFilter }) =>
   const getMessage = () => {
     switch (activeFilter) {
       case "en_cours":
-        return "Tu n'as aucune commande en cours";
+        return "Vous n'avez pas de commandes en cours.";
       case "termines":
-        return "Tu n'as aucune commande terminée";
+        return "Vous n'avez pas encore de commandes terminées.";
       case "annuler":
-        return "Tu n'as aucune commande annulée";
+        return "Vous n'avez pas de commandes annulées.";
       default:
-        return "Tu n'as aucune commande";
+        return "Aucune commande disponible.";
     }
   };
 
@@ -200,20 +230,19 @@ const EmptyState: React.FC<{ activeFilter: FilterType }> = ({ activeFilter }) =>
  * Composant pour les boutons de filtre
  */
 const FilterButton: React.FC<{
-  type: FilterType;
-  active: boolean;
-  onPress: () => void;
   label: string;
-}> = ({ type, active, onPress, label }) => (
+  isActive: boolean;
+  onPress: () => void;
+}> = ({ label, isActive, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
-    className={`flex-1 py-2 rounded-full ${
-      active ? "bg-orange-500" : "border border-orange-500"
+    className={`py-[4px] px-[32px] rounded-full ${
+      isActive ? "bg-[#F97316]" : "bg-white border-[1px] border-[#F97316]"
     }`}
   >
     <Text
-      className={`font-sofia-medium text-center ${
-        active ? "text-white" : "text-orange-500"
+      className={`font-sofia-medium ${
+        isActive ? "text-white" : "text-[#F97316]"
       }`}
     >
       {label}
@@ -226,81 +255,179 @@ const FilterButton: React.FC<{
  */
 const Orders = () => {
   const router = useRouter();
+  const { orders, fetchOrders, isLoading, error } = useOrderStore();
   const [activeFilter, setActiveFilter] = useState<FilterType>("en_cours");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
 
-  // Récupération des commandes mockées avec le bon typage
-  const mockOrders = users[0].orderHistory as Order[];
+  // Récupérer l'ID de l'utilisateur connecté
+  useEffect(() => {
+    const getUserId = async () => {
+      const userData = await AuthStorage.getUserData();
+      if (userData?.id) {
+        setCurrentUserId(userData.id);
+       
+      } else {
+       
+      }
+    };
+    getUserId();
+  }, []);
 
-  // Filtrage des commandes en fonction du filtre actif
-  const filteredOrders = useMemo(() => {
-    return mockOrders.filter(order => {
-      switch (activeFilter) {
-        case "en_cours":
-          return order.status === "pending";
-        case "termines":
-          return order.status === "delivered";
-        case "annuler":
-          return order.status === "cancelled";
-        default:
-          return true;
+  // Charger les commandes au montage du composant
+  useEffect(() => {
+    fetchOrders().then(() => {
+    
+      if (orders && orders.length > 0) {
+       
+        if (orders[0].order_items && orders[0].order_items.length > 0) {
+        
+          
+          if (orders[0].order_items[0].dish) {
+            
+          }
+        }
       }
     });
-  }, [mockOrders, activeFilter]);
+  }, []);
+
+  // Filtrer les commandes selon le filtre actif et l'ID de l'utilisateur
+  const filteredOrders = useMemo(() => {
+    if (orders.length === 0) return [];
+
+    // D'abord filtrer par utilisateur si un ID est disponible
+    let userOrders = orders;
+    if (currentUserId) {
+      userOrders = orders.filter(order => {
+      
+        const orderUserId = order.customer?.id || order.customer_id;
+        const matches = orderUserId === currentUserId;
+        if (!matches) {
+         
+        }
+        return matches;
+      });
+      
+    } else {
+      
+    }
+
+    // Ensuite filtrer par statut selon le filtre actif
+    switch (activeFilter) {
+      case "en_cours":
+        return userOrders.filter(order => 
+          [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus)
+        );
+      case "termines":
+        return userOrders.filter(order => order.status === OrderStatus.DELIVERED);
+      case "annuler":
+        return userOrders.filter(order => order.status === OrderStatus.CANCELLED);
+      default:
+        return userOrders;
+    }
+  }, [orders, activeFilter, currentUserId]);
 
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1 bg-gray-50">
       <StatusBar style="dark" />
       <CustomStatusBar />
 
-      {/* Header avec bouton retour et titre */}
-      <View className="flex-row items-center justify-between px-3 pb-8">
-        <TouchableOpacity onPress={() => router.back()}>
-          <Image
-            source={require("@/assets/icons/arrow-back.png")}
-            className="w-10 h-10"
-          />
-        </TouchableOpacity>
-        <Text className="text-xl font-sofia-medium text-gray-900">
-          Commandes
-        </Text>
-        <View className="w-10" />
+      {/* Header */}
+      <View className="bg-white pt-2 pb-4 px-4">
+        <View className="flex-row items-center justify-between">
+          <TouchableOpacity onPress={() => router.back()}>
+            <Image
+              source={require("@/assets/icons/arrow-back.png")}
+              className="w-10 h-10"
+              style={{ resizeMode: "contain" }}
+            />
+          </TouchableOpacity>
+          <Text className="text-xl font-sofia-medium text-gray-900">
+            Commandes
+          </Text>
+          <View className="w-10" />
+        </View>
       </View>
 
-      {/* Boutons de filtrage */}
-      <View className="flex-row px-4 gap-6 mb-4">
-        <FilterButton
-          type="en_cours"
-          active={activeFilter === "en_cours"}
-          onPress={() => setActiveFilter("en_cours")}
-          label="En cours"
-        />
-        <FilterButton
-          type="termines"
-          active={activeFilter === "termines"}
-          onPress={() => setActiveFilter("termines")}
-          label="Terminés"
-        />
-        <FilterButton
-          type="annuler"
-          active={activeFilter === "annuler"}
-          onPress={() => setActiveFilter("annuler")}
-          label="Annuler"
-        />
+      {/* Filtres */}
+      <View className="bg-white">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingBottom: 16,
+            flexGrow: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <View className="flex-row gap-3 justify-center">
+            <FilterButton
+              label="En cours"
+              isActive={activeFilter === "en_cours"}
+              onPress={() => setActiveFilter("en_cours")}
+            />
+            <FilterButton
+              label="Terminés"
+              isActive={activeFilter === "termines"}
+              onPress={() => setActiveFilter("termines")}
+            />
+            <FilterButton
+              label="Annulés"
+              isActive={activeFilter === "annuler"}
+              onPress={() => setActiveFilter("annuler")}
+            />
+          </View>
+        </ScrollView>
       </View>
 
-      {/* Liste des commandes ou état vide */}
-      <ScrollView 
-        className="flex-1 px-4" 
-        showsVerticalScrollIndicator={false}
-      >
-        {filteredOrders.length > 0 ? (
-          filteredOrders.map((order) => (
-            <OrderCard key={order.id} order={order} />
-          ))
-        ) : (
-          <EmptyState activeFilter={activeFilter} />
-        )}
-      </ScrollView>
+      {/* État de chargement */}
+      {isLoading && (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#F97316" />
+          <Text className="mt-4 text-gray-500 font-sofia-medium">
+            Chargement de vos commandes...
+          </Text>
+        </View>
+      )}
+
+      {/* État d'erreur */}
+      {error && !isLoading && (
+        <View className="flex-1 items-center justify-center p-4">
+         
+          <Text className="text-xl font-sofia-medium text-gray-900 text-center">
+            Une erreur est survenue
+          </Text>
+          <Text className="mt-2 text-gray-500 font-sofia-light text-center mb-6">
+            {error}
+          </Text>
+          <TouchableOpacity 
+            className="py-3 px-6 rounded-xl bg-orange-500"
+            onPress={() => fetchOrders()}
+          >
+            <Text className="text-white font-sofia-medium">
+              Réessayer
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Liste des commandes */}
+      {!isLoading && !error && (
+        <ScrollView
+          className="flex-1 px-4 pt-4"
+          showsVerticalScrollIndicator={false}
+        >
+          {filteredOrders.length > 0 ? (
+            filteredOrders.map((order) => (
+              <OrderCard key={order.id} order={order} />
+            ))
+          ) : (
+            <EmptyState activeFilter={activeFilter} />
+          )}
+          <View className="h-20" />
+        </ScrollView>
+      )}
     </View>
   );
 };

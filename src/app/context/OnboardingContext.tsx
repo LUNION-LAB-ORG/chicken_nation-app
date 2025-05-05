@@ -43,6 +43,10 @@ export const OnboardingProvider = ({ children }) => {
       try {
         const value = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);
         setIsFirstLaunch(!value); // true si value est null (premier lancement)
+        if (value) {
+          setShowOnboarding(false);
+          setCurrentScreen(null);
+        }
       } catch (error) {
         console.error("Erreur lors de la vérification du premier lancement:", error);
       }

@@ -17,9 +17,10 @@ import { useRouter } from "expo-router";
 import CartTabBar from "@/components/ui/CartTabBar";
 import { useAuth } from "@/app/context/AuthContext";
 import DynamicHeader from "@/components/home/DynamicHeader";
-import { useLocation } from "@/app/context/LocationContext";
+import useLocationStore from "@/store/locationStore";
 import { promoCodes } from "@/data/MockedData";
 import SuccessModal from "@/components/ui/SuccessModal";
+import AddressSelectionModal from "@/components/address/AddressSelectionModal";
 
 /**
  * Écran du panier d'achat
@@ -32,7 +33,7 @@ const Cart: React.FC = () => {
     useCartStore();
   const router = useRouter();
   const { user } = useAuth();
-  const { locationData, refreshLocationData } = useLocation();
+  const { addressDetails, coordinates, getFormattedAddress, setCoordinates, setAddressDetails, setLocationType } = useLocationStore();
 
   // États pour la gestion des codes promo
   const [promoCode, setPromoCode] = useState("");
@@ -47,27 +48,117 @@ const Cart: React.FC = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
+  // État pour la modale de sélection d'adresse
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+
   // Calcul des totaux pour l'affichage
   const calculatedTVA = totalAmount * 0.05;
   const deliveryFee = 1000;
   const finalTotal = totalAmount + calculatedTVA + deliveryFee - promoDiscount;
 
   /**
-   * Rafraîchit les données de localisation lors du montage du composant
+   * Récupère la localisation de l'utilisateur au chargement si aucune adresse n'est définie
    */
   useEffect(() => {
-    refreshLocationData();
+    const checkAndGetLocation = async () => {
+      // Si on n'a pas encore d'adresse ou de coordonnées, essayer de les obtenir
+      if (!addressDetails?.formattedAddress && !coordinates) {
+        await getCurrentLocation();
+      }
+    };
+    
+    checkAndGetLocation();
   }, []);
+
+  /**
+   * Récupère la position actuelle de l'utilisateur
+   */
+  const getCurrentLocation = async (): Promise<void> => {
+    try {
+      setIsLoadingLocation(true);
+      
+      // Vérifier si le module expo-location est disponible
+      const Location = require("expo-location");
+      
+      // Demander la permission d'accéder à la localisation
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== "granted") {
+        console.log("Permission de localisation refusée");
+        return;
+      }
+      
+      // Obtenir la localisation actuelle
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced
+      });
+      
+      // Mettre à jour les coordonnées dans le store
+      setCoordinates({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      });
+      
+      // Effectuer le geocoding inverse pour obtenir l'adresse
+      await reverseGeocode(location.coords.latitude, location.coords.longitude);
+      
+      // Définir le type de localisation comme automatique
+      setLocationType("auto");
+      
+    } catch (error) {
+      console.error("Erreur lors de la récupération de la localisation:", error);
+    } finally {
+      setIsLoadingLocation(false);
+    }
+  };
+
+  /**
+   * Convertit les coordonnées en une adresse (geocoding inverse)
+   */
+  const reverseGeocode = async (latitude: number, longitude: number): Promise<void> => {
+    try {
+      // Utiliser l'API de geocoding inverse de Nominatim (OpenStreetMap)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            "User-Agent": "ChickenNationApp",
+            "Accept-Language": "fr"
+          }
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        // Extraire les informations pertinentes de l'adresse
+        const addressDetails = {
+          road: data.address.road || "",
+          city: data.address.city || data.address.town || data.address.village || "",
+          postalCode: data.address.postcode || "",
+          formattedAddress: data.display_name || "",
+          address: data.address.road || ""
+        };
+        
+        // Mettre à jour les détails de l'adresse dans le store
+        setAddressDetails(addressDetails);
+      }
+    } catch (error) {
+      console.error("Erreur lors du geocoding inverse:", error);
+      // En cas d'erreur, définir une adresse par défaut
+      setAddressDetails({
+        formattedAddress: "Position actuelle"
+      });
+    }
+  };
 
   /**
    * Extrait l'adresse formatée à partir des données de localisation
    * @returns {string} L'adresse formatée pour l'affichage
    */
   const getDisplayAddress = (): string => {
-    if (locationData.addressDetails?.formattedAddress) {
-      return locationData.addressDetails.formattedAddress;
-    }
-    return "Localisation actuelle";
+    return getFormattedAddress();
   };
 
   /**
@@ -75,11 +166,8 @@ const Cart: React.FC = () => {
    * @returns {string} Le nom de la zone de livraison
    */
   const getAreaName = (): string => {
-    if (locationData.addressDetails?.city) {
-      return locationData.addressDetails.city;
-    }
-    if (locationData.locationType === "auto") {
-      return "Position GPS actuelle";
+    if (addressDetails?.city) {
+      return addressDetails.city;
     }
     return "Localisation actuelle";
   };
@@ -115,7 +203,7 @@ const Cart: React.FC = () => {
         setPromoDiscount(Math.min(validCode.discount, totalAmount));
       }
 
-      // Afficher la modale de succès au lieu de l'alerte
+      // Afficher la modale de succès
       setSuccessMessage(`${validCode.description}`);
       setShowSuccessModal(true);
     } else {
@@ -185,23 +273,7 @@ const Cart: React.FC = () => {
     return (
       <View className="flex-1 bg-white">
         <StatusBar style="dark" />
-        <View className="absolute top-0 left-0 right-0 z-50">
-          <CustomStatusBar />
-        </View>
-        <View className="flex flex-row items-center justify-between mt-10 p-6">
-          <TouchableOpacity onPress={() => router.back()}>
-            <Image
-              source={require("../../../assets/icons/arrow-back.png")}
-              style={{ width: 32, height: 32, resizeMode: "contain" }}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity>
-            <Image
-              source={require("../../../assets/icons/cart.png")}
-              style={{ width: 26, height: 26, resizeMode: "contain" }}
-            />
-          </TouchableOpacity>
-        </View>
+        <CustomStatusBar />
 
         <View className="flex-1 items-center justify-center">
           <Image
@@ -225,14 +297,20 @@ const Cart: React.FC = () => {
   // Rendu principal du panier avec des articles
   return (
     <View className="flex-1 bg-white">
-     <CustomStatusBar />
-      
-      <View className= "">
-        <DynamicHeader title="Panier des commandes" displayType="back" />
+      <StatusBar style="dark" />
+      <CustomStatusBar />
+
+      {/* Header fixe en haut */}
+      <View className="-mt-6 z-10">
+        <DynamicHeader
+          displayType="back"
+          title="Panier des commandes"
+          showCart={true}
+        />
       </View>
 
       <ScrollView
-        className="flex-1 mt-6 px-6 sm:px-6"
+        className="flex-1 mt-4 px-6 sm:px-6"
         showsVerticalScrollIndicator={false}
       >
         {/* Liste des produits dans le panier */}
@@ -240,9 +318,9 @@ const Cart: React.FC = () => {
           <View key={item.id} className="bg-white rounded-2xl p-4 mb-4">
             <View className="flex-row items-center">
               <Image
-                source={item.image}
+                source={typeof item.image === 'string' ? { uri: item.image } : item.image}
                 className="w-24 h-24 sm:w-20 sm:h-20 rounded-xl border-orange-500 border-[1px]"
-                style={{ resizeMode: "cover" }}
+                style={{ resizeMode: "contain" }}
                 accessibilityLabel={`Image de ${item.name}`}
               />
               <View className="flex-1 ml-4">
@@ -316,7 +394,10 @@ const Cart: React.FC = () => {
             <Text className="font-sofia-bold text-gray-500 mb-2">
               Lieu de livraison
             </Text>
-            <View className="flex-row items-center justify-between">
+            <TouchableOpacity 
+              onPress={() => setShowAddressModal(true)}
+              className="flex-row items-center justify-between"
+            >
               <View className="flex-row items-center">
                 <Image
                   source={require("../../../assets/icons/changelocation.png")}
@@ -324,24 +405,34 @@ const Cart: React.FC = () => {
                   style={{ resizeMode: "contain" }}
                 />
                 <View>
-                  <Text className="font-sofia-medium text-orange-500 text-sm sm:text-base">
-                    {getAreaName()}
-                  </Text>
-                  <Text className="mt-1 font-sofia-light text-gray-500 text-xs sm:text-sm">
-                    {getDisplayAddress()}
-                  </Text>
+                  {isLoadingLocation ? (
+                    <>
+                      <Text className="font-sofia-medium text-orange-500 text-sm sm:text-base">
+                        Localisation en cours...
+                      </Text>
+                      <Text className="mt-1 font-sofia-light text-gray-500 text-xs sm:text-sm">
+                        Récupération de votre position
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text className="font-sofia-medium text-orange-500 text-sm sm:text-base">
+                        {getAreaName()}
+                      </Text>
+                      <Text 
+                        className="mt-1 font-sofia-light text-gray-500 text-xs sm:text-sm"
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                        style={{ maxWidth: 200 }}
+                      >
+                        {getDisplayAddress()}
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
-              <TouchableOpacity
-                onPress={() => router.push("/location")}
-                accessibilityLabel="Modifier la localisation"
-              >
-                <Image
-                  source={require("../../../assets/icons/arrow-right2.png")}
-                  style={{ width: 24, height: 24, resizeMode: "contain" }}
-                />
-              </TouchableOpacity>
-            </View>
+              <FontAwesome name="angle-right" size={24} color="#FF6B00" />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -470,6 +561,15 @@ const Cart: React.FC = () => {
 
       {/* TabBar pour le panier */}
       <CartTabBar />
+
+      {/* Modale de sélection d'adresse */}
+      <AddressSelectionModal
+        visible={showAddressModal}
+        onClose={() => setShowAddressModal(false)}
+        onAddressSelected={() => {
+          // Rafraîchir les données de localisation après la sélection
+        }}
+      />
 
       {/* Modale de succès pour le code promo */}
       <SuccessModal

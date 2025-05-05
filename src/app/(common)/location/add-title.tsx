@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Image, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import { useLocation } from "@/app/context/LocationContext";
 import BackButtonTwo from "@/components/ui/BackButtonTwo";
+import { addUserAddress, Address } from "@/services/api/address";
 
 const AddAddressTitle = () => {
   const router = useRouter();
@@ -17,9 +18,29 @@ const AddAddressTitle = () => {
     const formattedAddress = params.formattedAddress as string;
 
     try {
-      if (coordinates) {
-        await setCoordinates(coordinates);
+      // 1. Préparer les données d'adresse pour l'API
+      if (!coordinates) {
+        throw new Error("Coordonnées manquantes");
       }
+
+      const addressData: Address = {
+        title: addressTitle || "Adresse",
+        address: formattedAddress,
+        street: params.street as string || "",
+        city: params.city as string || "Abidjan",
+        longitude: coordinates.longitude,
+        latitude: coordinates.latitude
+      };
+
+      // 2. Enregistrer l'adresse dans la base de données
+      const savedAddress = await addUserAddress(addressData);
+
+      if (!savedAddress) {
+        throw new Error("Échec de l'enregistrement de l'adresse dans la base de données");
+      }
+
+      // 3. Mettre à jour le contexte de localisation local
+      await setCoordinates(coordinates);
       await setLocationType(params.type as "auto" | "manual");
       await setAddressDetails({
         formattedAddress,
@@ -29,6 +50,11 @@ const AddAddressTitle = () => {
       router.push("/(authenticated-only)/settings/addresses");
     } catch (error) {
       console.error("Erreur lors de l'enregistrement:", error);
+      Alert.alert(
+        "Erreur",
+        "Une erreur est survenue lors de l'enregistrement de l'adresse",
+        [{ text: "OK" }]
+      );
     }
   };
 
@@ -91,4 +117,4 @@ const AddAddressTitle = () => {
   );
 };
 
-export default AddAddressTitle; 
+export default AddAddressTitle;

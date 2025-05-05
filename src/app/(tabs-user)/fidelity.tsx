@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ImageBackground,
 } from "react-native";  
+import { StatusBar } from "expo-status-bar";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 
@@ -65,12 +66,14 @@ const Fidelity: React.FC = () => {
 
   return (
     <View className="flex-1 bg-white">
-      {/* Header */}
+      <StatusBar style="dark" />
       <CustomStatusBar />
-      <View className="px-4 -mt-2 fixed ">
-       
+      
+      {/* Header fixe en haut */}
+      <View className="px-4 z-10">
         <DynamicHeader
-          displayType= "logo"
+          displayType="logo"
+          title="Fidélité"
           showCart={true}
         />
       </View>

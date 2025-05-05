@@ -4,8 +4,9 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { StatusBar } from "expo-status-bar";
 import MenuCategory from "@/components/menu/MenuCategory";
 import MenuItem from "@/components/menu/MenuItem";
@@ -13,7 +14,9 @@ import CategoryList from "@/components/menu/CategoryList";
 import HomeLocation from "@/components/home/HomeLocation";
 import HomeSearchBar from "@/components/home/HomeSearchBar";
 import MenuBanner from "@/components/menu/MenuBanner";
-import { menuItems, categories } from "@/data/MockedData";
+import { getAllMenus } from "@/services/menuService";
+import { getAllCategories } from "@/services/categoryService";
+import { MenuItem as MenuItemType, Category } from "@/types";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import DynamicHeader from "@/components/home/DynamicHeader";
@@ -21,6 +24,7 @@ import GradientButton from "@/components/ui/GradientButton";
 import useReservationStore from "@/store/reservationStore";
 import useDeliveryStore from "@/store/deliveryStore";
 import useTakeawayStore from "@/store/takeawayStore";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 import Animated, {
   FadeInDown,
   FadeInUp,
@@ -41,22 +45,127 @@ const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpaci
 
 const Menu: React.FC = () => {
   const router = useRouter();
-  const { categoryId } = useLocalSearchParams<{ categoryId?: string }>();
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(categories[0].id);
-
- 
-  const scrollY = useSharedValue(0);
+  const params = useLocalSearchParams();
+  const categoryId = typeof params.categoryId === 'string' ? params.categoryId : undefined;
+  
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemType[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const headerScale = useSharedValue(1);
   const buttonsTranslateY = useSharedValue(100);
 
+  const { activeType, setActiveType } = useOrderTypeStore();
   const { isActive: isReservationActive, cancelReservation } = useReservationStore();
   const { isActive: isDeliveryActive, currentStep, cancelDelivery } = useDeliveryStore();
   const { isActive: isTakeawayActive } = useTakeawayStore();
 
-  // Scroll handler 
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    const initializeMenu = async () => {
+      if (hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
+ 
+      
+      // Vérifier si un paramètre de type est spécifié
+      const hasTypeParam = params.type === 'pickup' || params.type === 'delivery' || params.type === 'reservation';
+      
+      // Si un paramètre de type est spécifié, l'utiliser pour définir le type de commande
+      if (hasTypeParam) {
+        if (params.type === 'pickup') {
+          console.log("Mode pickup détecté depuis les paramètres de route");
+          setActiveType(OrderType.PICKUP);
+        } else if (params.type === 'delivery') {
+          console.log("Mode delivery détecté depuis les paramètres de route");
+          setActiveType(OrderType.DELIVERY);
+        } else if (params.type === 'reservation') {
+          console.log("Mode réservation détecté depuis les paramètres de route");
+          setActiveType(OrderType.TABLE);
+        }
+      } else {
+        // Si aucun paramètre de type n'est spécifié, vérifier si le type actuel est valide
+        const isValidType = activeType === OrderType.DELIVERY || 
+                            activeType === OrderType.PICKUP || 
+                            activeType === OrderType.TABLE;
+        
+        // Ne réinitialiser à DELIVERY que si le type actuel n'est pas valide
+        if (!isValidType) {
+          console.log("Aucun type valide détecté, réinitialisation à DELIVERY");
+          useOrderTypeStore.getState().resetOrderTypeToDefault();
+          setActiveType(OrderType.DELIVERY);
+        } else {
+          console.log(`Type de commande actuel valide: ${activeType}, conservation de ce type`);
+        }
+      }
+      
+      // Vérifier à nouveau le type actif après la mise à jour
+      setTimeout(() => {
+        console.log("Type de commande après initialisation du menu:", useOrderTypeStore.getState().activeType);
+      }, 100);
+    };
+
+    initializeMenu();
+  }, []);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Récupérer les catégories
+        let categoriesData;
+        try {
+          categoriesData = await getAllCategories();
+          
+          if (!categoriesData || categoriesData.length === 0) {
+            setError("Aucune catégorie disponible pour le moment.");
+          } else {
+            setCategories(categoriesData);
+            
+            // Sélectionner la première catégorie par défaut
+            if (categoriesData.length > 0 && !selectedCategory) {
+              setSelectedCategory(categoriesData[0].id);
+            }
+          }
+        } catch (catError) {
+          setError("Impossible de charger les catégories. Veuillez réessayer plus tard.");
+          categoriesData = [];
+        }
+        
+        // Récupérer les menus
+        let menuData;
+        try {
+          menuData = await getAllMenus();
+          
+          if (menuData && menuData.length > 0) {
+            setMenuItems(menuData);
+            
+            // Si nous avons des menus mais pas de catégories, afficher un message d'erreur
+            if (!categoriesData || categoriesData.length === 0) {
+              setError("Les catégories ne sont pas disponibles pour le moment.");
+            }
+          } else {
+            setError("Aucun menu disponible pour le moment.");
+          }
+        } catch (menuError) {
+          setError("Impossible de charger les menus. Veuillez réessayer plus tard.");
+        }
+        
+      } catch (err) {
+        setError(`Impossible de charger les données: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
       headerScale.value = interpolate(
         event.contentOffset.y,
         [0, 100],
@@ -69,7 +178,7 @@ const Menu: React.FC = () => {
   
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: headerScale.value }],
-    opacity: interpolate(scrollY.value, [0, 100], [1, 0.9], Extrapolate.CLAMP),
+    opacity: interpolate(headerScale.value, [0.95, 1], [0.9, 1], Extrapolate.CLAMP),
   }));
 
   const bottomButtonsStyle = useAnimatedStyle(() => ({
@@ -96,17 +205,17 @@ const Menu: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (categoryId) {
-      setSelectedCategoryId(categoryId);
+    if (categoryId && categories.length > 0) {
+      setSelectedCategory(categoryId);
     }
-  }, [categoryId]);
+  }, [categoryId, categories]);
 
   const filteredMenuItems = menuItems.filter(
-    (item) => item.categoryId === selectedCategoryId,
+    (item) => item.categoryId === selectedCategory,
   );
 
-  const selectedCategory = categories.find(
-    (cat) => cat.id === selectedCategoryId,
+  const selectedCategoryData = categories.find(
+    (cat) => cat.id === selectedCategory,
   );
 
   const handleCancel = () => {
@@ -119,19 +228,62 @@ const Menu: React.FC = () => {
     router.push("/(common)/products/1");
   };
 
-  return (
-    <View className="flex-1 bg-white">
-      <View className="absolute top-0 left-0 right-0 z-50">
+  if (loading) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white">
+        <StatusBar style="dark" />
         <CustomStatusBar />
+        <ActivityIndicator size="large" color="#F97316" />
+        <Text className="mt-4 text-gray-600 font-urbanist-medium">Chargement du menu...</Text>
       </View>
+    );
+  }
 
-      <Animated.View className="py-2 pb-4 mt-12 px-4" style={headerStyle}>
+  if (error) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white px-4">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <Text className="text-red-500 font-urbanist-bold text-lg mb-2">Erreur</Text>
+        <Text className="text-gray-600 font-urbanist-medium text-center">{error}</Text>
+        <TouchableOpacity 
+          className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
+          onPress={() => router.back()}
+        >
+          <Text className="text-white font-urbanist-bold">Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (categories.length === 0) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white px-4">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <Text className="text-gray-600 font-urbanist-medium text-center">Aucune catégorie disponible pour le moment.</Text>
+        <TouchableOpacity 
+          className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
+          onPress={() => router.back()}
+        >
+          <Text className="text-white font-urbanist-bold">Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 relative bg-white">
+      <StatusBar style="dark" />
+      <CustomStatusBar />
+      
+      <View className="px-4 z-10">
         <DynamicHeader
-          displayType="logo"
-          title={isTakeawayActive ? "A emporter" : "Menu"}
-          showCart
+          displayType={activeType === OrderType.DELIVERY ? "table" : (activeType === OrderType.PICKUP ? "table" : "logo")}
+          title={activeType === OrderType.DELIVERY ? "Je veux manger" : (activeType === OrderType.PICKUP ? "A emporter" : "Menu")}
+          showCart={true}
         />
-      </Animated.View>
+      </View>
 
       <AnimatedScrollView
         showsVerticalScrollIndicator={false}
@@ -150,40 +302,47 @@ const Menu: React.FC = () => {
           <Animated.View entering={SlideInRight.duration(800).springify().delay(200)}>
             <CategoryList
               categories={categories}
-              selectedCategoryId={selectedCategoryId}
-              onSelectCategory={setSelectedCategoryId}
+              selectedCategoryId={selectedCategory}
+              onSelectCategory={setSelectedCategory}
             />
           </Animated.View>
 
-          {selectedCategory && (
+          {selectedCategoryData && (
             <Animated.View 
               entering={FadeInUp.duration(600).springify()}
               layout={Layout.springify()}
             >
-              <MenuCategory title={selectedCategory.name} />
+              <MenuCategory title={selectedCategoryData.name} />
             </Animated.View>
           )}
 
-          {filteredMenuItems.map((item, index) => (
-            <Animated.View
-              key={item.id}
-              entering={ZoomIn.duration(400).delay(index * 100)}
-              layout={Layout.springify()}
-            >
-              <MenuItem
-                id={item.id}
-                name={item.name}
-                price={`${item.price} FCFA`}
-                image={item.image}
-                isNew={item.isNew ? "NOUVEAU" : undefined}
-                description={item.description}
-              />
-            </Animated.View>
-          ))}
+          {filteredMenuItems.length > 0 ? (
+            filteredMenuItems.map((item, index) => (
+              <Animated.View
+                key={item.id}
+                entering={ZoomIn.duration(400).delay(index * 100)}
+                layout={Layout.springify()}
+              >
+                <MenuItem
+                  id={item.id}
+                  name={item.name}
+                  price={`${item.price} FCFA`}
+                  image={item.image}
+                  isNew={item.isNew ? "NOUVEAU" : undefined}
+                  description={item.description}
+                />
+              </Animated.View>
+            ))
+          ) : (
+            <Text className="text-gray-500 text-center py-8 font-urbanist-medium">
+              Aucun plat disponible dans cette catégorie
+            </Text>
+          )}
         </Animated.View>
       </AnimatedScrollView>
 
-      {isReservationActive && (
+      {/* Supprimer les boutons flottants qui apparaissent après avoir choisi le type de réservation */}
+      {/* {isReservationActive && (
         <Animated.View 
           style={[styles.bottomButtons, bottomButtonsStyle]}
           entering={SlideInUp.duration(500).springify()}
@@ -199,12 +358,13 @@ const Menu: React.FC = () => {
             style={{ flex: 1, marginLeft: 8 }}
             entering={FadeInUp.duration(400).delay(200)}
           >
-            <GradientButton onPress={handleNext}>
-              Suivant
-            </GradientButton>
+            <GradientButton 
+              onPress={handleNext}
+              text="Continuer"
+            />
           </Animated.View>
         </Animated.View>
-      )}
+      )} */}
     </View>
   );
 };
@@ -213,33 +373,35 @@ const styles = StyleSheet.create({
   bottomButtons: {
     flexDirection: "row",
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 20,
+    left: 20,
+    right: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     backgroundColor: "white",
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    elevation: 4,
+    borderRadius: 30,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   cancelButton: {
-    flex: 1,
-    marginRight: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 30,
     borderWidth: 1,
-    borderColor: "#F17922",
-    borderRadius: 24,
+    borderColor: "#F97316",
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 14,
   },
   cancelButtonText: {
-    color: "#F17922",
+    color: "#F97316",
+    fontFamily: "Urbanist-Bold",
     fontSize: 16,
-    fontFamily: "Urbanist-Medium",
   },
 });
 

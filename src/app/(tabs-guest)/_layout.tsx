@@ -1,11 +1,23 @@
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Image, View, Text, TouchableOpacity } from "react-native";
+import { useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * Disposition des onglets pour les utilisateurs invités
  * Affiche la barre de navigation inférieure avec les icônes et titres
  */
 export default function TabsLayout(): JSX.Element {
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Si connecté, redirige automatiquement vers tabs-user
+      router.replace("/(tabs-user)");
+    }
+  }, [isAuthenticated, router]);
+
   return (
     <Tabs
       screenOptions={({ route }) => ({

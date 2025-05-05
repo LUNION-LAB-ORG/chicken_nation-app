@@ -1,32 +1,27 @@
-import { View, Text, Image, TouchableOpacity } from "react-native";
+import { View, Text, Image, TouchableOpacity, Alert } from "react-native";
 import React, { useEffect, useState } from "react";
 import { router } from "expo-router";
-import { useLocation } from "@/app/context/LocationContext";
 import { useFocusEffect } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Location from "expo-location";
+import useLocationStore from "@/store/locationStore";
 
 /**
  * Affiche et gère la location actuelle dans l'en-tête de l'application
  */
 const HomeLocation: React.FC = () => {
-  const { locationData, refreshLocationData } = useLocation();
-  const [displayAddress, setDisplayAddress] = useState<string>(
-    "Localisation actuelle",
-  );
+  const { addressDetails, coordinates, setCoordinates, setAddressDetails, setLocationType, getFormattedAddress } = useLocationStore();
+  const [displayAddress, setDisplayAddress] = useState<string>("Localisation actuelle");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const locationIcon = require("../../assets/icons/localisation.png");
 
   // Rafraîchir les données de localisation lors de la mise au premier plan du composant
   useFocusEffect(
     React.useCallback(() => {
-      const fetchData = async () => {
-        await refreshLocationData();
-        updateDisplayAddress();
-      };
-
-      fetchData();
-
+      updateDisplayAddress();
       
-    }, []),
+      // Demander la permission et obtenir la localisation actuelle
+      requestLocationPermission();
+    }, [])
   );
 
   /**
@@ -34,79 +29,107 @@ const HomeLocation: React.FC = () => {
    */
   useEffect(() => {
     updateDisplayAddress();
-  }, [locationData]);
+  }, [addressDetails, coordinates]);
 
   /**
-   * Charge directement les données depuis AsyncStorage pour garantir leur fraîcheur
+   * Demande la permission d'accéder à la localisation et récupère la position actuelle
    */
-  const loadFreshLocationData = async (): Promise<void> => {
+  const requestLocationPermission = async (): Promise<void> => {
+    setIsLoading(true);
     try {
-      const storedData = await AsyncStorage.getItem("locationData");
-      if (storedData) {
-        const parsedData = JSON.parse(storedData);
+      // Demander la permission d'accéder à la localisation
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission refusée",
+          "Nous avons besoin de votre permission pour accéder à votre localisation."
+        );
+        setIsLoading(false);
+        return;
+      }
+      
+      // Obtenir la localisation actuelle
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced
+      });
+      
+      // Mettre à jour les coordonnées dans le store
+      setCoordinates({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      });
+      
+      // Effectuer le geocoding inverse pour obtenir l'adresse
+      await reverseGeocode(location.coords.latitude, location.coords.longitude);
+      
+      // Définir le type de localisation comme automatique
+      setLocationType("auto");
+      
+    } catch (error) {
+      console.error("Erreur lors de la récupération de la localisation:", error);
+      Alert.alert(
+        "Erreur",
+        "Impossible d'obtenir votre localisation. Veuillez réessayer."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        // Mettre à jour directement l'adresse affichée avec les données fraîches
-        updateAddressFromData(parsedData);
-      } else {
-        setDisplayAddress("Localisation actuelle");
+  /**
+   * Convertit les coordonnées en une adresse (geocoding inverse)
+   */
+  const reverseGeocode = async (latitude: number, longitude: number): Promise<void> => {
+    try {
+      // Utiliser l'API de geocoding inverse de Nominatim (OpenStreetMap)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            "User-Agent": "ChickenNationApp",
+            "Accept-Language": "fr"
+          }
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.address) {
+        // Extraire les informations pertinentes de l'adresse
+        const addressDetails = {
+          road: data.address.road || "",
+          city: data.address.city || data.address.town || data.address.village || "",
+          postalCode: data.address.postcode || "",
+          formattedAddress: data.display_name || "",
+          address: data.address.road || ""
+        };
+        
+        // Mettre à jour les détails de l'adresse dans le store
+        setAddressDetails(addressDetails);
       }
     } catch (error) {
-      console.error("Erreur lors du chargement des données fraîches:", error);
+      console.error("Erreur lors du geocoding inverse:", error);
+      // En cas d'erreur, définir une adresse par défaut
+      setAddressDetails({
+        formattedAddress: "Localisation en cours..."
+      });
     }
   };
 
   /**
-   * Convertit les coordonnées en une adresse 
+   * Formate et met à jour l'adresse à afficher
    */
-  const getFormattedAddressFromCoordinates = (coords): string => {
-    // Ne pas afficher les coordonnées brutes, retourner un texte 
-    return "Position actuelle";
-  };
-
-  /**
-   * Mise à jour de l'adresse affichée à partir des données fournies
-   */
-  const updateAddressFromData = (data): void => {
-    if (!data || (!data.addressDetails && !data.coordinates)) {
-      setDisplayAddress("Localisation actuelle");
-      return;
+  const updateDisplayAddress = (): void => {
+    const address = getFormattedAddress();
+    
+    // Tronquer l'adresse si elle est trop longue
+    const MAX_LENGTH = 35;
+    if (address.length > MAX_LENGTH) {
+      setDisplayAddress(address.substring(0, MAX_LENGTH - 3) + "...");
+    } else {
+      setDisplayAddress(address);
     }
-
-    // L'adresse formatée existe et ne contient pas de coordonnées brutes
-    if (
-      data.addressDetails?.formattedAddress &&
-      !data.addressDetails.formattedAddress.includes("Position:")
-    ) {
-      const address = data.addressDetails.formattedAddress;
-
-      // Tronquer l'adresse si elle est trop longue
-      const MAX_LENGTH = 35;
-      if (address.length > MAX_LENGTH) {
-        setDisplayAddress(address.substring(0, MAX_LENGTH - 3) + "...");
-      } else {
-        setDisplayAddress(address);
-      }
-    }
-    // Si l'adresse formatée contient des coordonnées, ou si on a des coordonnées mais pas d'adresse
-    else if (
-      data.coordinates ||
-      (data.addressDetails?.formattedAddress &&
-        data.addressDetails.formattedAddress.includes("Position:"))
-    ) {
-      setDisplayAddress("Position actuelle");
-    }
-    // Fallback
-    else {
-      setDisplayAddress("Localisation actuelle");
-    }
-  };
-
-  /**
-   * Formate et met à jour l'adresse à afficher selon le type de localisation
-   */
-  const updateDisplayAddress = async (): Promise<void> => {
-    // Charger directement depuis AsyncStorage pour garantir les données les plus récentes
-    await loadFreshLocationData();
   };
 
   /**

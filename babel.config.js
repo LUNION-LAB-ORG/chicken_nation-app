@@ -1,5 +1,3 @@
-const plugin = require("tailwindcss");
-
 module.exports = function (api) {
   api.cache(true);
   return {
@@ -7,9 +5,8 @@ module.exports = function (api) {
       ["babel-preset-expo", { jsxImportSource: "nativewind" }],
       "nativewind/babel",
     ],
-    plugins: [ 
-      'react-native-reanimated/plugin',
-     ]
-
+    plugins: [
+      ['react-native-reanimated/plugin', { relativeSourceLocation: true }]
+    ],
   };
 };

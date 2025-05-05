@@ -309,6 +309,8 @@ interface SupplementType {
  * @property totalReviews - Nombre total d'avis
  * @property discountedPrice - Prix après réduction
  * @property originalPrice - Prix avant réduction
+ * @property isPromotion - Indique si l'article est en promotion
+ * @property favorite_id - ID du favori (utilisé pour la suppression)
  */
 export interface MenuItem {
   id: string;
@@ -332,6 +334,8 @@ export interface MenuItem {
   totalReviews: number;
   discountedPrice?: string;
   originalPrice?: string;
+  isPromotion?: boolean;
+  favorite_id?: string; // ID du favori pour la suppression
 }
 
 /**

@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, ScrollView, Image, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView, Image, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Send } from "lucide-react-native";
 import GradientButton from "@/components/ui/GradientButton";
 import { PaymentMethod, paymentMethods } from "./types";
@@ -13,6 +13,7 @@ type ConfirmationStepProps = {
   finalTotal: number;
   onChangePayment: () => void;
   onContinue: () => void;
+  isLoading?: boolean;
 };
 
 const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
@@ -23,6 +24,7 @@ const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
   finalTotal,
   onChangePayment,
   onContinue,
+  isLoading = false,
 }) => {
   const selectedMethod = paymentMethods.find(
     (method) => method.id === selectedPayment,
@@ -77,11 +79,15 @@ const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
         )}
       </ScrollView>
       <View className="px-4 py-4 bg-white border-t border-gray-100">
-        <GradientButton onPress={onContinue}>
+        <GradientButton onPress={onContinue} disabled={isLoading}>
           <View className="flex-row items-center gap-3 justify-center space-x-2">
-            <Send size={24} color="white" />
+            {isLoading ? (
+              <ActivityIndicator color="white" size="small" />
+            ) : (
+              <Send size={24} color="white" />
+            )}
             <Text className="text-white text-lg font-urbanist-medium">
-              Effectuer le paiement
+              {isLoading ? "Traitement en cours..." : "Effectuer le paiement"}
             </Text>
           </View>
         </GradientButton>

@@ -48,9 +48,10 @@ const MenuItem: React.FC<MenuItemProps> = ({
       accessibilityHint="Appuyez pour voir les détails du produit"
     >
       <Image
-        source={image}
+        source={typeof image === 'string' ? { uri: image } : image}
         className="w-[100px] h-[100px] rounded-3xl border-[1px] border-slate-100"
         accessibilityLabel={`Image de ${name}`}
+        style={{ resizeMode: "contain" }}
       />
       <View className="ml-4 flex-1">
         {isNew && (

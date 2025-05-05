@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,17 +14,22 @@ import GradientButton from "@/components/ui/GradientButton";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import { StatusBar } from "expo-status-bar";
 import DynamicHeader from "@/components/home/DynamicHeader";
-import useReservationStore, { ReservationStep } from "@/store/reservationStore";
+import useOrderTypeStore, { OrderType, DBTableType } from "@/store/orderTypeStore";
 import TimePicker from "@/components/reservation/TimePickerProps";
 import CalendarPicker from "@/components/reservation/CalendarPicker";
 import TableReservation from "@/components/reservation/TableReservation";
+import { useAuth } from "@/app/context/AuthContext";
+import { getCustomerDetails } from "@/services/api/customer";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Reserver = () => {
   const router = useRouter();
+  const { user } = useAuth();
   const [date, setDate] = useState(new Date());
   const [numberOfGuests, setNumberOfGuests] = useState(4);
-  const [tableType, setTableType] = useState("Table ronde de 2 à 8");
+  const [tableType, setTableType] = useState(DBTableType.TABLE_ROUND);
   const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   // États pour le formulaire de l'étape 2
   const [fullName, setFullName] = useState("");
@@ -36,8 +41,62 @@ const Reserver = () => {
   const [selectedHour, setSelectedHour] = useState("11");
   const [selectedMinute, setSelectedMinute] = useState("30");
 
-  // Récupération des fonctions du store de réservation
-  const { updateData, startReservation, setStep } = useReservationStore();
+  // Utiliser le nouveau store centralisé
+  const { setActiveType, setReservationData } = useOrderTypeStore();
+
+  // Récupérer les données de l'utilisateur et remplir les champs automatiquement
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        setLoading(true);
+        
+        // Si nous avons déjà les données de base de l'utilisateur
+        if (user) {
+          // Pré-remplir le nom complet si disponible
+          if (user.first_name && user.last_name) {
+            setFullName(`${user.first_name} ${user.last_name}`);
+          }
+          
+          // Pré-remplir l'email si disponible
+          if (user.email) {
+            setEmail(user.email);
+          }
+          
+          // Pré-remplir le numéro de téléphone si disponible
+          if (user.phone) {
+            // Formatter le numéro de téléphone pour l'affichage (sans le préfixe international)
+            const formattedPhone = user.phone.replace(/^\+?225/, "");
+            setPhoneNumber(formattedPhone);
+          }
+          
+          // Si nous avons besoin de données plus détaillées, nous pouvons appeler l'API
+          const userDetails = await getCustomerDetails();
+          
+          // Mettre à jour les champs avec les données détaillées si disponibles
+          if (userDetails) {
+            if (!fullName && userDetails.first_name && userDetails.last_name) {
+              setFullName(`${userDetails.first_name} ${userDetails.last_name}`);
+            }
+            
+            if (!email && userDetails.email) {
+              setEmail(userDetails.email);
+            }
+            
+            if (!phoneNumber && userDetails.phone) {
+              const formattedPhone = userDetails.phone.replace(/^\+?225/, "");
+              setPhoneNumber(formattedPhone);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la récupération des données utilisateur:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadUserData();
+  }, [user]);
 
   const handleGuestChange = (increment) => {
     setNumberOfGuests((prev) => Math.max(1, prev + increment));
@@ -50,9 +109,8 @@ const Reserver = () => {
  
   const handleNext = () => {
     if (currentStep === 1) {
-      // Activer une réservation indépendante des fonctionnalités existantes
-      startReservation();
-      setStep(ReservationStep.DETAILS);
+      // Activer le type de commande TABLE dans le store centralisé
+      setActiveType(OrderType.TABLE);
       setCurrentStep(2);
 
       // Mettre à jour l'objet date avec l'heure sélectionnée
@@ -61,30 +119,49 @@ const Reserver = () => {
       newDate.setMinutes(parseInt(selectedMinute));
       setDate(newDate);
 
-    
-      updateData({
+      // Mettre à jour les données de réservation dans le store centralisé
+      const reservationData = {
         date: newDate,
         time: `${selectedHour}:${selectedMinute}`,
         numberOfPeople: numberOfGuests,
-        tableType,
-      });
+        tableType, // Utiliser le type de table au format de la base de données
+      };
+      
+      setReservationData(reservationData);
+      
+      
     } else {
       // Valider les champs obligatoires
-      if (!fullName.trim() || !phoneNumber.trim()) {
-        alert("Veuillez renseigner votre nom et numéro de téléphone.");
+      if (!fullName.trim()) {
+        alert("Veuillez renseigner votre nom complet.");
+        return;
+      }
+      
+      if (!phoneNumber.trim()) {
+        alert("Veuillez renseigner votre numéro de téléphone.");
+        return;
+      }
+      
+      if (!email.trim()) {
+        alert("Veuillez renseigner votre adresse email.");
         return;
       }
 
-      // Mettre à jour les données 
-      updateData({
+      // Mettre à jour les données complètes dans le store centralisé
+      const reservationData = {
         fullName,
         phoneNumber,
+        email,
         notes,
-      });
-
-      // Passer à l'étape Menu avec progression 70%
-      setStep(ReservationStep.MENU_SELECTION);
-
+        date,
+        time: `${selectedHour}:${selectedMinute}`,
+        numberOfPeople: numberOfGuests,
+        tableType, // Utiliser le type de table au format de la base de données
+      };
+      
+      setReservationData(reservationData);
+      
+    
       // Rediriger vers le menu
       router.push("/(tabs-user)/menu");
     }
@@ -130,49 +207,59 @@ const Reserver = () => {
           style={{ width: 18, height: 18, resizeMode: "contain" }}
         />
         <Text className="text-md font-sofia-bold text-orange-500 mb-4">
-          Nombre d'invités
+          Type de table et nombre d'invités
         </Text>
       </View>
-      <View className="mb-6">
-        <TableReservation />
-      </View>
+      <TableReservation 
+        onTableTypeChange={setTableType} 
+        onPersonCountChange={setNumberOfGuests} 
+      />
     </View>
   );
 
   // Rendu de l'étape 2: Informations du client
   const renderStep2 = () => (
     <View className="px-6 mt-6">
-      <View className="flex items-start flex-row gap-3 ">
+      <View className="flex flex-row gap-4 mb-6">
         <Image
           source={require("../../../assets/icons/chicken.png")}
           style={{ width: 18, height: 18, resizeMode: "contain" }}
         />
         <Text className="text-md font-sofia-bold text-orange-500 mb-4">
-          Informations utiles
+          Informations de contact
         </Text>
       </View>
 
-      <Text className="text-md font-sofia-light mb-3 mt-2">Nom complet </Text>
+      <Text className="text-md font-sofia-light mb-3">
+        Nom complet <Text className="text-red-500">*</Text>
+      </Text>
       <View className="border-gray-200 border-[1px] p-2 rounded-3xl mb-4">
         <TextInput
           value={fullName}
           onChangeText={setFullName}
           className="font-urbanist-regular"
+          placeholder="Votre nom complet"
+          editable={!loading}
         />
       </View>
 
       <Text className="text-md font-sofia-light mb-3">
-        Numéro de téléphone{" "}
+        Numéro de téléphone <Text className="text-red-500">*</Text>
       </Text>
       <View className="border-gray-200 border-[1px] p-2 rounded-3xl mb-4">
         <TextInput
           value={phoneNumber}
           onChangeText={setPhoneNumber}
           className="font-urbanist-regular"
+          placeholder="Votre numéro de téléphone"
+          keyboardType="phone-pad"
+          editable={!loading}
         />
       </View>
 
-      <Text className="text-md font-sofia-light mb-3">Email </Text>
+      <Text className="text-md font-sofia-light mb-3">
+        Email <Text className="text-red-500">*</Text>
+      </Text>
       <View className="border-gray-200 border-[1px] p-2 rounded-3xl mb-4">
         <TextInput
           value={email}
@@ -180,6 +267,8 @@ const Reserver = () => {
           keyboardType="email-address"
           autoCapitalize="none"
           className="font-urbanist-regular"
+          placeholder="Votre adresse email"
+          editable={!loading}
         />
       </View>
 
@@ -192,8 +281,16 @@ const Reserver = () => {
           numberOfLines={4}
           style={{ height: 100, textAlignVertical: "top" }}
           className="font-urbanist-regular"
+          placeholder="Demandes spéciales ou informations supplémentaires"
+          editable={!loading}
         />
       </View>
+      
+      {loading && (
+        <Text className="text-center text-orange-500 italic mb-4">
+          Chargement de vos informations...
+        </Text>
+      )}
     </View>
   );
 

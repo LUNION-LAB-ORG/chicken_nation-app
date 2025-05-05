@@ -16,20 +16,22 @@ import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import GradientButton from "@/components/ui/GradientButton";
 import { useRouter } from "expo-router";
-import useReservationStore, { ReservationStep } from "@/store/reservationStore";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 import useCartStore from "@/store/cartStore";
 import { useAuth } from "@/app/context/AuthContext";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Finreservation: React.FC = () => {
   const router = useRouter();
   const { user } = useAuth();
-  const { data, completeReservation, setStep } = useReservationStore();
+  const { reservationData, setActiveType } = useOrderTypeStore();
   const { items, totalAmount, clearCart } = useCartStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // S'assurer que nous sommes à la bonne étape
+  // S'assurer que nous sommes en mode réservation
   useEffect(() => {
-    setStep(ReservationStep.CONFIRMATION);
+    // Activer le type de commande TABLE
+    setActiveType(OrderType.TABLE);
   }, []);
 
   // Calculer les montants
@@ -40,13 +42,29 @@ const Finreservation: React.FC = () => {
   // Gérer la finalisation de la réservation
   const handleCheckout = () => {
     if (user) {
-      router.push({
-        pathname: "/(authenticated-only)/checkout",
-        params: {
-          type: "reservation",
-          reservationData: JSON.stringify(data)
-        }
-      });
+      try {
+        // Définir le type de commande sur TABLE avant de naviguer vers le checkout
+        
+        setActiveType(OrderType.TABLE);
+        
+        
+        // Ajouter un délai pour s'assurer que le store est mis à jour avant la navigation
+        setTimeout(() => {
+          // Naviguer vers le checkout avec un paramètre indiquant qu'il s'agit d'une réservation
+          router.push({
+            pathname: "/(authenticated-only)/checkout",
+            params: { type: 'reservation' }
+          });
+        }, 100);
+      } catch (error) {
+        console.error("Erreur lors de la préparation des données de réservation:", error);
+        
+        // Naviguer vers le checkout même en cas d'erreur
+        router.push({
+          pathname: "/(authenticated-only)/checkout",
+          params: { type: 'reservation' }
+        });
+      }
     } else {
       Alert.alert(
         "Connexion requise",
@@ -69,9 +87,9 @@ const Finreservation: React.FC = () => {
 
   // Formatage de la date pour l'affichage
   const formatDate = () => {
-    if (!data.date) return "Date non spécifiée";
+    if (!reservationData.date) return "Date non spécifiée";
 
-    return new Date(data.date).toLocaleDateString("fr-FR", {
+    return new Date(reservationData.date).toLocaleDateString("fr-FR", {
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -107,24 +125,24 @@ const Finreservation: React.FC = () => {
                 Date et heure de réservation
               </Text>
             </View>
-            {data.fullName && (
+            {reservationData.fullName && (
               <View className="flex-row justify-between mb-4">
                 <Text className="font-sofia-light text-[#9796A1] text-base">
                   Nom complet
                 </Text>
                 <Text className="font-sofia-medium text-base text-[#595959]">
-                  {data.fullName}
+                  {reservationData.fullName}
                 </Text>
               </View>
             )}
 
-            {data.phoneNumber && (
+            {reservationData.phoneNumber && (
               <View className="flex-row justify-between mb-4">
                 <Text className="font-sofia-light text-[#9796A1] text-base">
                   Numéro de téléphone
                 </Text>
                 <Text className="font-sofia-medium text-base text-[#595959]">
-                  {data.phoneNumber}
+                  {reservationData.phoneNumber}
                 </Text>
               </View>
             )}
@@ -152,7 +170,7 @@ const Finreservation: React.FC = () => {
                 Heure d'arrivée
               </Text>
               <Text className="font-sofia-medium text-base text-[#595959]">
-                {data.time || "Non spécifiée"}
+                {reservationData.time || "Non spécifiée"}
               </Text>
             </View>
 
@@ -161,7 +179,7 @@ const Finreservation: React.FC = () => {
                 Nombre de personnes
               </Text>
               <Text className="font-sofia-medium text-base text-[#595959]">
-                {data.numberOfPeople || 0} personnes
+                {reservationData.numberOfPeople || 0} personnes
               </Text>
             </View>
           </View>

@@ -122,7 +122,7 @@ const CommentsScreen: React.FC = () => {
     <View className="flex-1 bg-white">
       <StatusBar />
       <CustomStatusBar />
-      <View className="px-4 -mt-5">
+      <View className="pr-2 -mt-5">
         <DynamicHeader
           displayType="back"
           title="Commentaires"

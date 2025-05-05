@@ -17,7 +17,7 @@ const LoginScreen: React.FC = () => {
   /**
    * Redirige vers l'écran d'authentification par email/téléphone
    */
-  const handleEmailAuth = (): void => router.push("/(auth)/authwithemail");
+  const handleEmailAuth = (): void => router.push("/(auth)/authwithphone");
 
   return (
     <View className="flex-1 bg-white">
@@ -49,7 +49,7 @@ const LoginScreen: React.FC = () => {
         {/* Bouton principal de connexion */}
         <TouchableOpacity
           onPress={handleEmailAuth}
-          className="bg-orange-600 w-full h-14 z-20 items-center justify-center"
+          className="bg-[#F17922] -mt-[1px] w-full h-14 z-20 items-center justify-center"
         >
           <Text className="text-base font-sofia-light text-white text-center my-4">
             Connexion ou inscription rapide et simple
@@ -67,29 +67,7 @@ const LoginScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
 
-          {/* Connexion avec Google */}
-          <TouchableOpacity className="p-5 w-full rounded-3xl flex-row items-center justify-center bg-slate-50">
-            <Image
-              source={require("../../assets/icons/google.png")}
-              className="w-[29px] h-[29px]"
-              resizeMode="contain"
-            />
-            <Text className="ml-2 font-urbanist-medium text-center">
-              Google
-            </Text>
-          </TouchableOpacity>
-
-          {/* Connexion avec Facebook */}
-          <TouchableOpacity className="p-5 mt-4 w-full rounded-3xl flex-row items-center justify-center bg-slate-50">
-            <Image
-              source={require("../../assets/icons/facebook.png")}
-              className="w-[29px] h-[29px]"
-              resizeMode="contain"
-            />
-            <Text className="ml-2 font-urbanist-medium text-center">
-              Facebook
-            </Text>
-          </TouchableOpacity>
+      
         </View>
       </View>
     </View>

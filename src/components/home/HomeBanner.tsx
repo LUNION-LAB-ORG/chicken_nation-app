@@ -13,6 +13,7 @@ import Svg, { Path } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/app/context/AuthContext";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 64) / 3;
@@ -84,6 +85,9 @@ const HomeBanner = () => {
     // Déclencher l'animation
     animateCard(cardAnimation, cardIndex);
 
+    // Récupérer les fonctions du store centralisé
+    const { setActiveType, resetReservationData } = useOrderTypeStore.getState();
+
     // Après un court délai pour laisser l'animation se produire
     setTimeout(() => {
       if (!user) {
@@ -93,13 +97,40 @@ const HomeBanner = () => {
         // Si l'utilisateur est authentifié, rediriger vers la page correspondante
         switch (cardIndex) {
           case 1: // Livraison
-            router.push("/(authenticated-only)/bedelivered");
+            
+            // Définir le type de commande sur DELIVERY
+            setActiveType(OrderType.DELIVERY);
+            // Réinitialiser les données de réservation
+            resetReservationData();
+            // Rediriger vers la page de livraison avec un paramètre
+            router.push({
+              pathname: "/(authenticated-only)/bedelivered",
+              params: { type: 'delivery' }
+            });
             break;
           case 2: // Emporter
-            router.push("/(authenticated-only)/takeaway");
+           
+            // Définir le type de commande sur PICKUP
+            setActiveType(OrderType.PICKUP);
+            // Réinitialiser les données de réservation
+            resetReservationData();
+            // Rediriger vers la page de commande à emporter avec un paramètre
+            router.push({
+              pathname: "/(authenticated-only)/takeaway",
+              params: { type: 'pickup' }
+            });
             break;
           case 3: // Réservation
-            router.push("/(authenticated-only)/reservation");
+           
+            // Définir le type de commande sur TABLE
+            setActiveType(OrderType.TABLE);
+            // Réinitialiser les données de réservation
+            resetReservationData();
+            // Rediriger vers la page de réservation avec un paramètre
+            router.push({
+              pathname: "/(authenticated-only)/reservation",
+              params: { type: 'reservation' }
+            });
             break;
           default:
             router.push("/(tabs-user)/");
@@ -197,7 +228,7 @@ const HomeBanner = () => {
         <Image
           source={require("../../assets/images/homebanner.png")}
           style={[styles.bannerImage, { width: width }]}
-          resizeMode="cover"
+          resizeMode="stretch"
           onLayout={({ nativeEvent }) => {
             setBannerImageSize({
               width: nativeEvent.layout.width,
@@ -333,7 +364,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%",
     height: "100%",
-    backgroundColor: "rgba(0,0,0,0.3",
+    backgroundColor: "#7a3502",
   },
   activeBackdrop: {
     position: "absolute",

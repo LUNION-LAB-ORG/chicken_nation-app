@@ -1,17 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Dimensions, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { ArrowLeft, Calendar, Mail, Phone, Lock, Eye, EyeOff, Edit, User, X, Camera, Trash2 } from "lucide-react-native";
+import {Eye, EyeOff} from "lucide-react-native";
+import { getCustomerDetails } from "@/services/api/customer";
+import { useAuth } from "@/app/context/AuthContext";
+import ErrorModal from "@/components/ui/ErrorModal";
+import { format } from "date-fns";
+import { api } from "@/services/api/api"; 
+import { formatImageUrl } from '@/utils/imageHelpers';
 
 const { width } = Dimensions.get('window');
 const PROFILE_IMAGE_SIZE = width * 0.85;
 
 const AccountSettings = () => {
   const router = useRouter();
+  const { user, accessToken, updateUserData } = useAuth();
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -33,6 +40,60 @@ const AccountSettings = () => {
     new: false,
     confirm: false,
   });
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
+  // Charger les données utilisateur depuis le backend au chargement du composant
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoadingProfile(true);
+        
+        // Récupérer les données utilisateur depuis l'API
+        const userData = await getCustomerDetails();
+        
+        if (userData) {
+          
+          // Mettre à jour les états locaux avec les données de l'API
+          setFirstName(userData.first_name || "");
+          setLastName(userData.last_name || "");
+          setEmail(userData.email || "");
+          setPhone(userData.phone || "");
+          
+          // Mettre à jour la date de naissance si disponible
+          if (userData.birth_day) {
+            const [day, month, year] = userData.birth_day.split('/');
+            if (day && month && year) {
+              setBirthDate(new Date(parseInt(year), parseInt(month) - 1, parseInt(day)));
+            } else {
+              setBirthDate(new Date(userData.birth_day));
+            }
+          }
+          
+          // Mettre à jour l'image de profil si disponible
+          if (userData.image) {
+            setProfileImage(userData.image);
+          }
+          
+          // Mettre à jour le contexte d'authentification avec les données fraîches
+          updateUserData(userData);
+        }
+      } catch (error) {
+        console.error('Erreur lors du chargement des données utilisateur:', error);
+        setErrorMessage("Impossible de charger vos données. Veuillez réessayer.");
+        setShowErrorModal(true);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    
+    fetchUserData();
+  }, []);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -87,8 +148,13 @@ const AccountSettings = () => {
     }
   };
 
-  const formatDate = (date: Date) => {
-    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+  const formatDate = (date: Date | null): string => {
+    if (!date) return '';
+    return date.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
   };
 
   const handleEmailChange = () => {
@@ -375,6 +441,146 @@ const AccountSettings = () => {
     </Modal>
   );
 
+  const handleUpdateProfile = async () => {
+    try {
+      setUpdating(true);
+      setSuccessMessage("");
+      setErrorMessage("");
+
+      // Vérification du token d'authentification
+      if (!accessToken) {
+        setErrorMessage("Vous n'êtes pas authentifié");
+        setShowErrorModal(true);
+        setUpdating(false);
+        return;
+      }
+
+      // Création du FormData pour l'envoi des données
+      const formData = new FormData();
+      
+      // Ajout des champs texte uniquement s'ils ont une valeur
+      if (firstName.trim()) {
+        formData.append('first_name', firstName.trim());
+      }
+      
+      if (lastName.trim()) {
+        formData.append('last_name', lastName.trim());
+      }
+      
+      // Ajout de la date de naissance si disponible
+      if (birthDate) {
+        // Utiliser le format dd/MM/yyyy comme dans create-account
+        formData.append('birth_day', format(birthDate, 'dd/MM/yyyy'));
+      }
+      
+      // Ajout de l'email uniquement s'il a une valeur
+      if (email.trim()) {
+        formData.append('email', email.trim());
+      }
+      
+      // NE PAS ajouter le champ 'phone' car l'API le connaît déjà
+      // et sa validation est très stricte
+      
+      // Ajout de l'image si disponible et si c'est une nouvelle image (commence par 'file:')
+      let hasNewImage = false;
+      if (profileImage && profileImage.startsWith('file:')) {
+        hasNewImage = true;
+        // Extraction du nom et du type de l'image
+        const uriParts = profileImage.split('/');
+        const fileName = uriParts[uriParts.length - 1];
+        const fileType = fileName.split('.').pop()?.toLowerCase() === 'png' 
+          ? 'image/png' 
+          : 'image/jpeg';
+        
+        // Ajouter l'image au FormData de la même façon que dans create-account
+        formData.append('image', {
+          uri: profileImage,
+          name: fileName,
+          type: fileType,
+        } as any);
+      }
+      
+      // Vérifier si le FormData contient des données à envoyer
+      let hasData = false;
+      // @ts-ignore
+      for (let [key, value] of formData._parts || []) {
+        hasData = true;
+        break;
+      }
+      
+      if (!hasData) {
+        setErrorMessage("Aucune modification à enregistrer");
+        setUpdating(false);
+        return;
+      }
+      
+   
+      const response = await api.patch('/v1/customer', formData, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 30000, // 30 secondes
+      });
+       
+      
+      // Déterminer l'URL de l'image à utiliser
+      let imageUrl = null;
+      
+      // 1. Utiliser l'image de la réponse API si disponible
+      if (response.data && response.data.image) {
+        imageUrl = formatImageUrl(response.data.image); 
+      } 
+      // 2. Sinon, si une nouvelle image a été sélectionnée, l'utiliser
+      else if (hasNewImage && profileImage) {
+        imageUrl = profileImage; // Les images locales n'ont pas besoin d'être formatées
+        
+      } 
+      // 3. Sinon, conserver l'image existante
+      else if (user?.image) {
+        imageUrl = formatImageUrl(user.image);
+     
+      }
+      
+      // Mise à jour des données utilisateur dans le contexte
+      const updatedUserData = {
+        ...user,
+        first_name: firstName,
+        last_name: lastName,
+        birth_day: birthDate ? format(birthDate, 'dd/MM/yyyy') : null,
+        email: email || null,
+        phone: phone,
+        image: imageUrl,
+      };
+      
+      updateUserData(updatedUserData, false);
+      
+      setSuccessMessage("Profil mis à jour avec succès !");
+      
+      
+      try {
+        const freshUserData = await getCustomerDetails();
+        if (freshUserData) {
+          updateUserData(freshUserData, false);
+          console.log('Données utilisateur rechargées depuis l\'API');
+        }
+      } catch (refreshError) {
+        console.error('Erreur lors du rechargement des données utilisateur:', refreshError);
+      }
+    } catch (e: any) {
+      console.error('Erreur lors de la mise à jour du profil:', e);
+      // Afficher plus de détails sur l'erreur
+      if (e.response) {
+    
+      }
+      setErrorMessage(e.message || "Erreur lors de la mise à jour du profil");
+      setShowErrorModal(true);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   return (
     <View className="flex-1 bg-white">
       <StatusBar style="dark" />
@@ -452,17 +658,27 @@ const AccountSettings = () => {
 
         {/* Informations utilisateur */}
         <View className="px-8 space-y-6 mt-10">
-          {/* Nom complet */}
-          <View className="bg-gray-50 rounded-2xl p-4 mb-5">
-            <Text className="text-base font-sofia-medium text-gray-900  ">
-              Jean-Marc CISSE
-            </Text>
-          </View>
-
+          {/* Nom */}
+          <TextInput
+            className="bg-gray-50 rounded-2xl p-4 mb-3 text-base font-sofia-medium text-gray-900"
+            placeholder="Nom"
+            value={lastName}
+            onChangeText={setLastName}
+            editable={!loadingProfile}
+          />
+          {/* Prénom */}
+          <TextInput
+            className="bg-gray-50 rounded-2xl p-4 mb-3 text-base font-sofia-medium text-gray-900"
+            placeholder="Prénom"
+            value={firstName}
+            onChangeText={setFirstName}
+            editable={!loadingProfile}
+          />
           {/* Date de naissance */}
           <TouchableOpacity
             className="bg-gray-50 rounded-2xl p-4 flex-row justify-between items-center mb-5"
             onPress={() => setShowDatePicker(true)}
+            disabled={loadingProfile}
           >
             <Text className="text-base font-sofia-medium text-gray-900">
               {formatDate(birthDate)}
@@ -472,53 +688,42 @@ const AccountSettings = () => {
               className="w-6 h-6"
             />
           </TouchableOpacity>
-
           {/* Email */}
-          <TouchableOpacity
-            className="bg-gray-50 rounded-2xl p-4 flex-row justify-between items-center mb-5"
-            onPress={() => {
-              setTempEmail(email);
-              setShowEmailModal(true);
-            }}
-          >
-            <Text className="text-base font-sofia-medium text-gray-900">
-              {email}
-            </Text>
-            <Image
-              source={require("@/assets/icons/message.png")}
-              className="w-6 h-6"
-            />
-          </TouchableOpacity>
-
+          <TextInput
+            className="bg-gray-50 rounded-2xl p-4 mb-3 text-base font-sofia-medium text-gray-900"
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            editable={!loadingProfile}
+          />
           {/* Téléphone */}
-          <TouchableOpacity
-            className="bg-gray-50 rounded-2xl p-4 flex-row justify-between items-center mb-5"
-            onPress={() => {
-              setTempPhone(phone);
-              setShowPhoneModal(true);
-            }}
-          >
-            <Text className="text-base font-sofia-medium text-gray-900">
-              {phone}
-            </Text>
-            <Image
-              source={require("@/assets/icons/phone.png")}
-              className="w-6 h-6"
-            />
-          </TouchableOpacity>
-
-          {/* Mot de passe */}
-          <TouchableOpacity
-            className="bg-gray-50 rounded-2xl p-4 flex-row justify-between items-center"
-            onPress={() => setShowPasswordModal(true)}
-          >
-            <Text className="text-base font-sofia-medium text-gray-900">
-              Modifier le mot de passe
-            </Text>
-            <Lock size={24} color="#1C274C" />
-          </TouchableOpacity>
+          <TextInput
+            className="bg-gray-50 rounded-2xl p-4 mb-3 text-base font-sofia-medium text-gray-900"
+            placeholder="Téléphone"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            maxLength={16}
+            editable={!loadingProfile}
+          />
         </View>
         <View className="h-8" />
+        {/* BOUTON METTRE À JOUR */}
+        <TouchableOpacity
+          className="bg-orange-500 rounded-2xl mx-8 py-4 items-center mb-8"
+          onPress={handleUpdateProfile}
+          disabled={updating || loadingProfile}
+        >
+          <Text className="text-white text-lg font-sofia-bold">
+            {updating ? "Mise à jour..." : "Mettre à jour"}
+          </Text>
+        </TouchableOpacity>
+        {successMessage ? (
+          <View className="mx-8 mb-4 bg-green-100 rounded-xl p-3 items-center">
+            <Text className="text-green-700 font-sofia-medium">{successMessage}</Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       <PhotoUploadModal />
@@ -535,6 +740,11 @@ const AccountSettings = () => {
           maximumDate={new Date()}
         />
       )}
+      <ErrorModal
+        visible={showErrorModal}
+        message={errorMessage}
+        onClose={() => setShowErrorModal(false)}
+      />
     </View>
   );
 };

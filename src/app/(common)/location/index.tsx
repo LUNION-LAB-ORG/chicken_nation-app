@@ -4,6 +4,8 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  Text,
+  StyleSheet,
 } from "react-native";
 import MapView, { PROVIDER_GOOGLE, Marker, Region } from "react-native-maps";
 import * as ExpoLocation from "expo-location";
@@ -15,6 +17,8 @@ import BackButtonTwo from "@/components/ui/BackButtonTwo";
 import { useLocation } from "../../context/LocationContext";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import Spinner from "@/components/ui/Spinner"; 
+import { addUserAddress, Address } from "@/services/api/address";
+import { useAuth } from "@/app/context/AuthContext";
 
 // Structure des coordonnées géographiques
 interface Coordinates {
@@ -47,6 +51,7 @@ const Location: React.FC = () => {
   const [showTitleModal, setShowTitleModal] = useState<boolean>(false);
   const [addressTitle, setAddressTitle] = useState<string>("");
   const [tempLocationData, setTempLocationData] = useState<any>(null);
+  const [isMovingMarker, setIsMovingMarker] = useState<boolean>(false);
   const router = useRouter();
 
   // Mise à jour de la carte quand les coordonnées changent dans le contexte
@@ -133,8 +138,21 @@ const Location: React.FC = () => {
   const handleMarkerDragEnd = (event: {
     nativeEvent: { coordinate: Coordinates };
   }): void => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setCurrentLocation({ latitude, longitude });
+    setCurrentLocation(event.nativeEvent.coordinate);
+  };
+
+  // Activer/désactiver le mode de déplacement du marqueur
+  const toggleMarkerMovement = (): void => {
+    setIsMovingMarker(!isMovingMarker);
+  };
+
+  // Mise à jour de la position du marqueur lorsque l'utilisateur appuie sur la carte
+  const handleMapPress = (event: any): void => {
+    // Ne rien faire si le mode de déplacement n'est pas activé
+    if (!isMovingMarker) return;
+    
+    const { coordinate } = event.nativeEvent;
+    setCurrentLocation(coordinate);
   };
 
   // Sauvegarde de la position actuelle avec son adresse
@@ -168,24 +186,44 @@ const Location: React.FC = () => {
     }
   };
 
-  // Sauvegarde finale de l'adresse avec son titre
+  // Sauvegarde de l'adresse avec titre
   const handleSaveAddress = async () => {
     if (!tempLocationData) return;
     
     try {
-      await setCoordinates(tempLocationData.coordinates);
-      await setLocationType("auto");
-      await setAddressDetails({
-        formattedAddress: tempLocationData.formattedAddress,
+      // Préparer les données d'adresse pour le backend
+      const addressData: Address = {
         title: addressTitle,
-      });
+        address: tempLocationData.formattedAddress || "Adresse sélectionnée",
+        street: tempLocationData.street || "",
+        city: tempLocationData.city || "Abidjan",
+        longitude: currentLocation?.longitude || 0,
+        latitude: currentLocation?.latitude || 0
+      };
+
+      // Enregistrer l'adresse dans le backend
+      const savedAddress = await addUserAddress(addressData);
       
-      setShowTitleModal(false);
-      setAddressTitle("");
-      router.back();
+      if (savedAddress) {
+        // Mettre à jour le contexte de localisation
+        await setLocationType("manual");
+        await setAddressDetails({
+          ...tempLocationData,
+          title: addressTitle
+        });
+        
+        setShowTitleModal(false);
+        router.back();
+      } else {
+        throw new Error("Échec de l'enregistrement de l'adresse");
+      }
     } catch (error) {
-      console.error("Erreur lors de l'enregistrement:", error);
-      Alert.alert("Erreur", "Impossible d'enregistrer l'adresse.");
+      console.error("Erreur lors de l'enregistrement de l'adresse:", error);
+      Alert.alert(
+        "Erreur",
+        "Une erreur est survenue lors de l'enregistrement de l'adresse",
+        [{ text: "OK" }]
+      );
     }
   };
 
@@ -199,9 +237,14 @@ const Location: React.FC = () => {
       <View style={{ flex: 1 }}>
         <StatusBar style="dark" />
         <CustomStatusBar />
-       <View className="px-3 -mt-10 mb-3">
-       <BackButtonTwo 
-        title="Localisation" />
+       <View className="px-3  mb-3">
+       <View className="flex flex-row items-center justify-between">
+      <TouchableOpacity onPress={() => router.back()}>
+        <Image source={require("../../../assets/icons/arrow-back.png")} style={{ width: 30, height: 30, }} />
+        </TouchableOpacity>
+        <Text className="text-2xl font-sofia-medium">Localisation</Text>
+        <View />
+        </View>
        </View>
  
         <View style={{ flex: 1 }}>
@@ -212,6 +255,7 @@ const Location: React.FC = () => {
             initialRegion={ABIDJAN_REGION}
             showsUserLocation
             showsMyLocationButton={false}
+            onPress={handleMapPress}
           >
             {currentLocation && (
               <Marker
@@ -238,6 +282,25 @@ const Location: React.FC = () => {
             />
           </TouchableOpacity>
 
+          {/* Bouton pour activer/désactiver le mode de déplacement
+          <TouchableOpacity
+            style={styles.moveButton}
+            onPress={toggleMarkerMovement}
+          >
+            <Text style={styles.moveButtonText}>
+              {isMovingMarker ? "Terminer" : "Déplacer le marqueur"}
+            </Text>
+          </TouchableOpacity> */}
+          
+          {/* Message d'aide pour le déplacement */}
+          {isMovingMarker && (
+            <View style={styles.helpBanner}>
+              <Text style={styles.helpText}>
+                Appuyez sur la carte pour déplacer le marqueur
+              </Text>
+            </View>
+          )}
+
           {isLocating && (
             <View className="absolute inset-0 flex items-center justify-center bg-black/10">
               <Spinner />
@@ -253,5 +316,39 @@ const Location: React.FC = () => {
     </GestureHandlerRootView>
   );
 };
+
+const styles = StyleSheet.create({
+  moveButton: {
+    position: 'absolute',
+    bottom: 200,
+    right: 16,
+    backgroundColor: '#FF6B00',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  moveButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  helpBanner: {
+    position: 'absolute',
+    top: 16,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  helpText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+});
 
 export default Location;
