@@ -8,14 +8,14 @@ import { useRouter } from "expo-router";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import TimePicker from "@/components/reservation/TimePickerProps";
 import CalendarPicker from "@/components/reservation/CalendarPicker";
-import useTakeawayStore from "@/store/takeawayStore";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 
 type Step = "initial" | "schedule";
 
 const TakeawayScreen = () => {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<Step>("initial");
-  const { setActive, setSelectedTime, setSelectedDate } = useTakeawayStore();
+  const { setActiveType, setReservationData } = useOrderTypeStore();
 
   const [selectedHour, setSelectedHour] = useState("11");
   const [selectedMinute, setSelectedMinute] = useState("30");
@@ -24,10 +24,23 @@ const TakeawayScreen = () => {
     if (currentStep === "initial") {
       setCurrentStep("schedule");
     } else {
-      // Activer le takeaway et sauvegarder les sélections
-      setActive(true);
-      setSelectedTime(selectedHour, selectedMinute);
-      router.push("/(tabs-user)/menu");
+      // Activer le type de commande PICKUP
+      
+      setActiveType(OrderType.PICKUP);
+      
+      // Sauvegarder les sélections d'heure et de date
+      const selectedTime = `${selectedHour}:${selectedMinute}`;
+      setReservationData({
+        time: selectedTime
+      });
+      
+     
+      
+      // Naviguer vers le menu avec un paramètre indiquant le type de commande
+      router.push({
+        pathname: "/(tabs-user)/menu",
+        params: { type: 'pickup' }
+      });
     }
   };
 
@@ -83,9 +96,7 @@ const TakeawayScreen = () => {
         </Text>
       </View>
 
-      <GradientButton onPress={handleNext} className="w-full mt-6">
-        Suivant
-      </GradientButton>
+   
     </View>
   );
 
@@ -117,7 +128,10 @@ const TakeawayScreen = () => {
               Date et heure de réservation
             </Text>
           </View>
-          <CalendarPicker onDateSelect={setSelectedDate} />
+          <CalendarPicker onDateSelect={(date) => {
+            // Convertir la date en objet Date et l'enregistrer dans le store
+            setReservationData({ date: new Date(date) });
+          }} />
           <View className="mt-6">
             <TimePicker
               selectedHour={selectedHour}
@@ -127,6 +141,10 @@ const TakeawayScreen = () => {
             />
           </View>
           {renderScheduleStep()}
+
+          <GradientButton onPress={handleNext} className="w-full mt-6">
+        Suivant
+      </GradientButton>
         </View>
       )}
     </View>

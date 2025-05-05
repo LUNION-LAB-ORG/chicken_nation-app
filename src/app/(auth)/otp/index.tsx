@@ -166,7 +166,8 @@ const OTP: React.FC = () => {
           email: response.email,
           image: response.image,
           created_at: response.created_at,
-          updated_at: response.updated_at
+          updated_at: response.updated_at,
+          phone: localPhone // Ajout du numéro de téléphone
         },
         response.token,
         response.refreshToken

@@ -6,7 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { StatusBar } from "expo-status-bar";
 import MenuCategory from "@/components/menu/MenuCategory";
 import MenuItem from "@/components/menu/MenuItem";
@@ -24,6 +24,7 @@ import GradientButton from "@/components/ui/GradientButton";
 import useReservationStore from "@/store/reservationStore";
 import useDeliveryStore from "@/store/deliveryStore";
 import useTakeawayStore from "@/store/takeawayStore";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 import Animated, {
   FadeInDown,
   FadeInUp,
@@ -44,26 +45,74 @@ const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpaci
 
 const Menu: React.FC = () => {
   const router = useRouter();
-  const { categoryId } = useLocalSearchParams<{ categoryId?: string }>();
+  const params = useLocalSearchParams();
+  const categoryId = typeof params.categoryId === 'string' ? params.categoryId : undefined;
   
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItemType[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
-
-  const scrollY = useSharedValue(0);
   const headerScale = useSharedValue(1);
   const buttonsTranslateY = useSharedValue(100);
 
+  const { activeType, setActiveType } = useOrderTypeStore();
   const { isActive: isReservationActive, cancelReservation } = useReservationStore();
   const { isActive: isDeliveryActive, currentStep, cancelDelivery } = useDeliveryStore();
   const { isActive: isTakeawayActive } = useTakeawayStore();
 
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    const initializeMenu = async () => {
+      if (hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
+ 
+      
+      // Vérifier si un paramètre de type est spécifié
+      const hasTypeParam = params.type === 'pickup' || params.type === 'delivery' || params.type === 'reservation';
+      
+      // Si un paramètre de type est spécifié, l'utiliser pour définir le type de commande
+      if (hasTypeParam) {
+        if (params.type === 'pickup') {
+          console.log("Mode pickup détecté depuis les paramètres de route");
+          setActiveType(OrderType.PICKUP);
+        } else if (params.type === 'delivery') {
+          console.log("Mode delivery détecté depuis les paramètres de route");
+          setActiveType(OrderType.DELIVERY);
+        } else if (params.type === 'reservation') {
+          console.log("Mode réservation détecté depuis les paramètres de route");
+          setActiveType(OrderType.TABLE);
+        }
+      } else {
+        // Si aucun paramètre de type n'est spécifié, vérifier si le type actuel est valide
+        const isValidType = activeType === OrderType.DELIVERY || 
+                            activeType === OrderType.PICKUP || 
+                            activeType === OrderType.TABLE;
+        
+        // Ne réinitialiser à DELIVERY que si le type actuel n'est pas valide
+        if (!isValidType) {
+          console.log("Aucun type valide détecté, réinitialisation à DELIVERY");
+          useOrderTypeStore.getState().resetOrderTypeToDefault();
+          setActiveType(OrderType.DELIVERY);
+        } else {
+          console.log(`Type de commande actuel valide: ${activeType}, conservation de ce type`);
+        }
+      }
+      
+      // Vérifier à nouveau le type actif après la mise à jour
+      setTimeout(() => {
+        console.log("Type de commande après initialisation du menu:", useOrderTypeStore.getState().activeType);
+      }, 100);
+    };
+
+    initializeMenu();
+  }, []);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setIsLoading(true);
+        setLoading(true);
         setError(null);
         
         // Récupérer les catégories
@@ -77,8 +126,8 @@ const Menu: React.FC = () => {
             setCategories(categoriesData);
             
             // Sélectionner la première catégorie par défaut
-            if (categoriesData.length > 0 && !selectedCategoryId) {
-              setSelectedCategoryId(categoriesData[0].id);
+            if (categoriesData.length > 0 && !selectedCategory) {
+              setSelectedCategory(categoriesData[0].id);
             }
           }
         } catch (catError) {
@@ -108,7 +157,7 @@ const Menu: React.FC = () => {
       } catch (err) {
         setError(`Impossible de charger les données: ${err.message}`);
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
     
@@ -117,7 +166,6 @@ const Menu: React.FC = () => {
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
       headerScale.value = interpolate(
         event.contentOffset.y,
         [0, 100],
@@ -130,7 +178,7 @@ const Menu: React.FC = () => {
   
   const headerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: headerScale.value }],
-    opacity: interpolate(scrollY.value, [0, 100], [1, 0.9], Extrapolate.CLAMP),
+    opacity: interpolate(headerScale.value, [0.95, 1], [0.9, 1], Extrapolate.CLAMP),
   }));
 
   const bottomButtonsStyle = useAnimatedStyle(() => ({
@@ -158,16 +206,16 @@ const Menu: React.FC = () => {
 
   useEffect(() => {
     if (categoryId && categories.length > 0) {
-      setSelectedCategoryId(categoryId);
+      setSelectedCategory(categoryId);
     }
   }, [categoryId, categories]);
 
   const filteredMenuItems = menuItems.filter(
-    (item) => item.categoryId === selectedCategoryId,
+    (item) => item.categoryId === selectedCategory,
   );
 
-  const selectedCategory = categories.find(
-    (cat) => cat.id === selectedCategoryId,
+  const selectedCategoryData = categories.find(
+    (cat) => cat.id === selectedCategory,
   );
 
   const handleCancel = () => {
@@ -180,7 +228,7 @@ const Menu: React.FC = () => {
     router.push("/(common)/products/1");
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <View className="flex-1 justify-center items-center bg-white">
         <StatusBar style="dark" />
@@ -231,8 +279,8 @@ const Menu: React.FC = () => {
       
       <View className="px-4 z-10">
         <DynamicHeader
-          displayType={isDeliveryActive ? "table" : (isTakeawayActive ? "table" : "logo")}
-          title={isDeliveryActive ? "Je veux manger" : (isTakeawayActive ? "A emporter" : "Menu")}
+          displayType={activeType === OrderType.DELIVERY ? "table" : (activeType === OrderType.PICKUP ? "table" : "logo")}
+          title={activeType === OrderType.DELIVERY ? "Je veux manger" : (activeType === OrderType.PICKUP ? "A emporter" : "Menu")}
           showCart={true}
         />
       </View>
@@ -254,17 +302,17 @@ const Menu: React.FC = () => {
           <Animated.View entering={SlideInRight.duration(800).springify().delay(200)}>
             <CategoryList
               categories={categories}
-              selectedCategoryId={selectedCategoryId}
-              onSelectCategory={setSelectedCategoryId}
+              selectedCategoryId={selectedCategory}
+              onSelectCategory={setSelectedCategory}
             />
           </Animated.View>
 
-          {selectedCategory && (
+          {selectedCategoryData && (
             <Animated.View 
               entering={FadeInUp.duration(600).springify()}
               layout={Layout.springify()}
             >
-              <MenuCategory title={selectedCategory.name} />
+              <MenuCategory title={selectedCategoryData.name} />
             </Animated.View>
           )}
 
@@ -293,7 +341,8 @@ const Menu: React.FC = () => {
         </Animated.View>
       </AnimatedScrollView>
 
-      {isReservationActive && (
+      {/* Supprimer les boutons flottants qui apparaissent après avoir choisi le type de réservation */}
+      {/* {isReservationActive && (
         <Animated.View 
           style={[styles.bottomButtons, bottomButtonsStyle]}
           entering={SlideInUp.duration(500).springify()}
@@ -315,7 +364,7 @@ const Menu: React.FC = () => {
             />
           </Animated.View>
         </Animated.View>
-      )}
+      )} */}
     </View>
   );
 };

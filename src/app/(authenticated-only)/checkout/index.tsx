@@ -2,13 +2,12 @@ import React, { useState, useRef, useEffect } from "react";
 import { View, Text, Image, TouchableOpacity, TextInput, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import useCartStore from "@/store/cartStore";
 import { useLocation } from "@/app/context/LocationContext";
 import { useAuth } from "@/app/context/AuthContext";
 import useOrderStore from "@/store/orderStore";
-import useDeliveryStore from "@/store/deliveryStore";
-import useTakeawayStore from "@/store/takeawayStore";
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 import {
   PaymentMethod,
   CheckoutStep,
@@ -27,6 +26,7 @@ import {
 } from "@/components/checkout";
 import { getUserAddresses } from "@/services/api/address";
 import { getCustomerDetails } from "@/services/api/customer";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Étendre le type LocationData pour inclure addressId
 declare module "@/app/context/LocationContext" {
@@ -69,17 +69,86 @@ interface SimpleAddCreditCardProps {
 
 const Checkout = () => {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { items, totalAmount, clearCart } = useCartStore();
   const { locationData } = useLocation();
   const { user } = useAuth();
-  const { isActive: isDeliveryActive } = useDeliveryStore();
-  const { isActive: isTakeawayActive, selectedDate, selectedHour, selectedMinute } = useTakeawayStore();
-  const { createDeliveryOrder, createTakeawayOrder, isLoading, error, resetOrderState } = useOrderStore();
   
-  // Réinitialiser l'état du store d'ordres au chargement du composant
+  // Utiliser le nouveau store centralisé au lieu des trois stores séparés
+  const { activeType, reservationData, setActiveType, resetReservationData } = useOrderTypeStore();
+  
+  // Conserver uniquement le store d'ordres pour créer les commandes
+  const { createDeliveryOrder, createTakeawayOrder, createTableOrder, isLoading, error, resetOrderState } = useOrderStore();
+  
+  // Référence pour éviter les initialisations multiples
+  const hasInitializedRef = useRef(false);
+
+  // Initialiser le composant une seule fois
   useEffect(() => {
-    console.log("Réinitialisation de l'état du store d'ordres");
-    resetOrderState();
+    const initializeCheckout = async () => {
+      if (hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
+ 
+      
+      // Réinitialiser l'état du store d'ordres
+      resetOrderState();
+
+      
+      
+      // Si nous avons un paramètre 'type' égal à 'reservation', activer le mode TABLE
+      if (params.type === 'reservation') {
+        
+        setActiveType(OrderType.TABLE);
+      }
+    };
+
+    initializeCheckout();
+  }, []);
+
+  // Référence pour éviter les boucles infinies
+  const hasCheckedRef = useRef(false);
+
+  // Vérifier et définir le type de commande en fonction des paramètres
+  useEffect(() => {
+    if (hasCheckedRef.current) return;
+    hasCheckedRef.current = true;
+ 
+
+    // Vérifier si un paramètre de type est spécifié
+    const hasTypeParam = params.type === 'pickup' || params.type === 'delivery' || params.type === 'reservation';
+    
+    // Si un paramètre de type est spécifié, l'utiliser pour définir le type de commande
+    if (hasTypeParam) {
+      if (params.type === 'pickup') {
+        
+        setActiveType(OrderType.PICKUP);
+      } else if (params.type === 'delivery') {
+        
+        setActiveType(OrderType.DELIVERY);
+      } else if (params.type === 'reservation') {
+      
+        setActiveType(OrderType.TABLE);
+      }
+    } else {
+      // Si aucun paramètre de type n'est spécifié, vérifier si le type actuel est valide
+      const isValidType = activeType === OrderType.DELIVERY || 
+                          activeType === OrderType.PICKUP || 
+                          activeType === OrderType.TABLE;
+      
+      // Ne réinitialiser à DELIVERY que si le type actuel n'est pas valide
+      if (!isValidType) {
+       
+        useOrderTypeStore.getState().resetOrderTypeToDefault();
+        setActiveType(OrderType.DELIVERY);
+      } else {
+       
+      }
+    }
+
+    // Vérifier à nouveau le type actif après la mise à jour
+    setTimeout(() => {
+      
+    }, 100);
   }, []);
 
   const [currentStep, setCurrentStep] = useState<CheckoutStep>("recap");
@@ -112,7 +181,7 @@ const Checkout = () => {
   // Surveiller les erreurs du store d'ordres
   useEffect(() => {
     if (error) {
-      console.log("Erreur détectée dans le store d'ordres:", error);
+      
       setOrderError(error);
       setCurrentStep("failed");
     }
@@ -138,17 +207,54 @@ const Checkout = () => {
   };
 
   const handleContinue = () => {
-    console.log("handleContinue appelé, étape actuelle:", currentStep);
+  
+    
     if (currentStep === "recap") {
-      console.log("Passage de l'étape recap à payment");
       setCurrentStep("payment");
-    } else if (currentStep === "payment" && selectedPayment) {
-      console.log("Passage de l'étape payment à confirmation");
-      setCurrentStep("confirmation");
+      console.log("Passage de l'étape recap à payment");
+    } else if (currentStep === "payment") {
+      if (selectedPayment === "card") {
+        setCurrentStep("addcreditcard");
+        console.log("Passage de l'étape payment à addcreditcard");
+      } else {
+        setCurrentStep("confirmation");
+        console.log("Passage de l'étape payment à confirmation");
+      }
     } else if (currentStep === "confirmation") {
       console.log("Ouverture de la modal de confirmation");
       setShowConfirmationModal(true);
     }
+  };
+
+  const getAddressId = async () => {
+    const userAddresses = await getUserAddresses();
+    let addressId: string | undefined;
+
+    if (!userAddresses || userAddresses.length === 0) {
+      if (locationData && locationData.coordinates) {
+        const { coordinates, addressDetails } = locationData;
+        try {
+          const tempAddress = {
+            title: "Position actuelle",
+            address: addressDetails?.formattedAddress || "Position actuelle",
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+            street: addressDetails?.address || "",
+            city: addressDetails?.city || "Abidjan"
+          };
+          await AsyncStorage.setItem('temp_delivery_address', JSON.stringify(tempAddress));
+          addressId = "current_location";
+        } catch (error) {
+          console.error("Erreur lors de la création de l'adresse temporaire:", error);
+          throw new Error("Impossible d'utiliser votre position actuelle. Veuillez ajouter une adresse dans votre profil.");
+        }
+      } else {
+        throw new Error("Aucune adresse trouvée et localisation actuelle non disponible. Veuillez ajouter une adresse dans votre profil.");
+      }
+    } else {
+      addressId = userAddresses[0].id?.toString();
+    }
+    return addressId;
   };
 
   const handleProceedPayment = async () => {
@@ -173,16 +279,8 @@ const Checkout = () => {
       const email = userData.email || "";
       const phone = userData.phone || "";
       
-      // Récupérer les adresses de l'utilisateur
-      const userAddresses = await getUserAddresses();
-      
-      // Vérifier si l'utilisateur a des adresses
-      if (!userAddresses || userAddresses.length === 0) {
-        throw new Error("Aucune adresse trouvée. Veuillez ajouter une adresse dans votre profil.");
-      }
-      
-      // Utiliser la première adresse disponible
-      const addressId = userAddresses[0].id?.toString();
+      // Récupérer l'ID de l'adresse
+      const addressId = await getAddressId();
       
       if (!addressId) {
         throw new Error("Adresse invalide. Veuillez ajouter une nouvelle adresse dans votre profil.");
@@ -201,7 +299,7 @@ const Checkout = () => {
       }
       
       // Créer la commande selon le type (livraison ou à emporter)
-      if (isDeliveryActive) {
+      if (activeType === OrderType.DELIVERY) {
         // Créer une commande de livraison
         orderId = await createDeliveryOrder(
           addressId,
@@ -210,7 +308,7 @@ const Checkout = () => {
           email,
           "" // Note (optionnelle)
         );
-      } else if (isTakeawayActive) {
+      } else if (activeType === OrderType.PICKUP) {
         // Créer une commande à emporter
         orderId = await createTakeawayOrder(
           fullname,
@@ -249,6 +347,7 @@ const Checkout = () => {
     setShowConfirmationModal(false);
     setProcessingOrder(true);
     
+   
     try {
       // Vérifier si l'utilisateur est connecté
       if (!user) {
@@ -262,23 +361,17 @@ const Checkout = () => {
         throw new Error("Impossible de récupérer vos données utilisateur");
       }
       
-      console.log("Données utilisateur complètes:", JSON.stringify(userData, null, 2));
+      
       
       // Préparer les données de l'utilisateur
       const fullname = `${userData.first_name} ${userData.last_name}`;
       const email = userData.email || "";
       const phone = userData.phone || "";
       
-      // Récupérer les adresses de l'utilisateur
-      const userAddresses = await getUserAddresses();
+    
       
-      // Vérifier si l'utilisateur a des adresses
-      if (!userAddresses || userAddresses.length === 0) {
-        throw new Error("Aucune adresse trouvée. Veuillez ajouter une adresse dans votre profil.");
-      }
-      
-      // Utiliser la première adresse disponible
-      const addressId = userAddresses[0].id?.toString();
+      // Récupérer l'ID de l'adresse
+      const addressId = await getAddressId();
       
       if (!addressId) {
         throw new Error("Adresse invalide. Veuillez ajouter une nouvelle adresse dans votre profil.");
@@ -292,6 +385,8 @@ const Checkout = () => {
       // Vérifier les articles du panier
       const cartStore = useCartStore.getState();
       
+      console.log("Articles du panier:", cartStore.items.length, "item(s)");
+      
       if (cartStore.items.length === 0) {
         throw new Error("Votre panier est vide");
       }
@@ -301,36 +396,73 @@ const Checkout = () => {
         throw new Error("Veuillez sélectionner un moyen de paiement");
       }
       
-      // Créer la commande selon le type (livraison ou à emporter)
-      if (isDeliveryActive) {
-        // Créer une commande de livraison
-        orderId = await createDeliveryOrder(
-          addressId,
-          fullname,
-          phone,
-          email,
-          `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
-        );
-      } else if (isTakeawayActive) {
-        // Créer une commande à emporter
-        orderId = await createTakeawayOrder(
-          fullname,
-          phone,
-          email,
-          `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
-        );
-      } else {
-        // Par défaut, créer une commande de livraison
-        orderId = await createDeliveryOrder(
-          addressId,
-          fullname,
-          phone,
-          email,
-          `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
-        );
+      console.log("Moyen de paiement sélectionné:", selectedPayment);
+      
+      // Créer la commande selon le type actif
+      switch (activeType) {
+        case OrderType.TABLE:
+          
+          
+          // Utiliser la fonction getFormattedReservationData pour obtenir les données formatées
+          const formattedReservationData = useOrderTypeStore.getState().getFormattedReservationData();
+          
+          if (!formattedReservationData) {
+            throw new Error("Données de réservation incomplètes. Veuillez recommencer la réservation.");
+          }
+          
+         
+          formattedReservationData.note += ` - Paiement par ${selectedPayment}`;
+          
+          // Créer une réservation de table
+          orderId = await createTableOrder(
+            formattedReservationData.fullname,
+            formattedReservationData.email,
+            formattedReservationData.date,
+            formattedReservationData.time,
+            formattedReservationData.tableType,
+            formattedReservationData.numberOfPeople,
+            formattedReservationData.note
+          );
+          break;
+          
+        case OrderType.PICKUP:
+          
+          // Créer une commande à emporter
+          orderId = await createTakeawayOrder(
+            fullname,
+            phone,
+            email,
+            `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
+          );
+          break;
+          
+        case OrderType.DELIVERY:
+        default:
+         
+          // Créer une commande de livraison
+          orderId = await createDeliveryOrder(
+            addressId,
+            fullname,
+            phone,
+            email,
+            `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
+          );
+          break;
       }
       
+     
+      
       if (orderId) {
+        // Réinitialiser les données de réservation après une commande réussie
+        if (activeType === OrderType.TABLE) {
+          
+          resetReservationData();
+        }
+        
+        // Réinitialiser le type de commande à DELIVERY pour la prochaine commande
+        console.log("Réinitialisation du type de commande à DELIVERY pour la prochaine commande");
+        useOrderTypeStore.getState().resetOrderTypeToDefault();
+        
         setCurrentStep("success");
         
         // Vider le panier après la commande réussie
@@ -339,10 +471,12 @@ const Checkout = () => {
         throw new Error("Erreur lors de la création de la commande");
       }
     } catch (err: any) {
+      console.error("ERREUR LORS DU PROCESSUS DE PAIEMENT:", err.message);
       setOrderError(err.message || "Erreur lors du paiement");
       setCurrentStep("failed");
     } finally {
       setProcessingOrder(false);
+      
     }
   };
 

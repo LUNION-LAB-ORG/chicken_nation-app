@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, Image, ScrollView } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
-// Types de tables disponibles
+import { DBTableType } from "@/store/orderTypeStore";
+
+// Types de tables pour l'interface utilisateur
 type TableType = "round" | "square" | "long";
+
+// Mapping entre les types d'UI et les types de la base de données
+export const TABLE_TYPE_MAPPING = {
+  round: DBTableType.TABLE_ROUND,
+  square: DBTableType.TABLE_SQUARE,
+  long: DBTableType.TABLE_RECTANGLE
+};
 
 // Configuration des tables
 const TABLE_CONFIG = {
@@ -97,7 +106,7 @@ const getChairPositions = (type, count) => {
   return [];
 };
 
-export default function TableReservation() {
+export default function TableReservation({ onTableTypeChange, onPersonCountChange }) {
   // État pour le type de table sélectionné
   const [selectedTableType, setSelectedTableType] =
     useState<TableType>("round");
@@ -114,6 +123,18 @@ export default function TableReservation() {
       setPersonCount(max);
     }
   }, [selectedTableType]);
+  
+  // Notifier le parent des changements
+  useEffect(() => {
+    // Convertir le type d'UI en type de base de données
+    const dbTableType = TABLE_TYPE_MAPPING[selectedTableType];
+    if (onTableTypeChange) {
+      onTableTypeChange(dbTableType);
+    }
+    if (onPersonCountChange) {
+      onPersonCountChange(personCount);
+    }
+  }, [selectedTableType, personCount, onTableTypeChange, onPersonCountChange]);
 
   // Gérer l'incrémentation du nombre de personnes
   const incrementPersonCount = () => {

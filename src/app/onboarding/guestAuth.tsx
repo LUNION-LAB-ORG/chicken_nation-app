@@ -32,7 +32,7 @@ const GuestAuth: React.FC = () => {
   useEffect(() => {
     // Rediriger automatiquement les utilisateurs déjà connectés
     if (isAuthenticated && user) {
-      console.log("Utilisateur déjà connecté, redirection vers l'interface utilisateur");
+     
       router.replace("/(tabs-user)/");
       return;
     }
@@ -119,7 +119,7 @@ const GuestAuth: React.FC = () => {
                     accessibilityLabel="Continuer avec email ou numéro"
                   >
                     <Text className="font-urbanist-medium text-white text-base">
-                      Continuer avec un email un numéro
+                      Continuer avec un numéro de téléphone
                     </Text>
                   </TouchableOpacity>
                 </Animated.View>

@@ -159,15 +159,35 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
     Object.values(selectedSupplements).forEach((items) => {
       items.forEach((item) => {
         if (!item.isIncluded) {
-          const itemPrice = extractPriceNumber(item.price);
+          // Correction du prix des suppléments
+          // Extraire le prix en tant que nombre et s'assurer qu'il n'est pas multiplié incorrectement
+          let itemPrice = 0;
+          
+          // Vérifier si le prix est déjà un nombre
+          if (typeof item.price === 'number') {
+            itemPrice = item.price;
+          } else {
+            // Extraire uniquement les chiffres du prix
+            const priceMatch = item.price.match(/\d+/);
+            if (priceMatch) {
+              itemPrice = parseInt(priceMatch[0], 10);
+            }
+          }
+          
           if (!isNaN(itemPrice)) {
+            console.log(`Supplément: ${item.name}, Prix: ${itemPrice} FCFA`);
             supplementsPrice += itemPrice;
           }
         }
       });
     });
 
-    const total = (basePrice + supplementsPrice) * quantity;
+    // MODIFICATION: Ne pas multiplier le prix des suppléments par la quantité
+    // Multiplier seulement le prix de base par la quantité, puis ajouter le prix des suppléments
+    const total = (basePrice * quantity) + supplementsPrice;
+    
+    console.log(`Prix de base: ${basePrice} FCFA, Quantité: ${quantity}, Prix des suppléments: ${supplementsPrice} FCFA, Total: ${total} FCFA`);
+    
     return {
       formattedTotal: formatPrice(total),
       basePrice,
@@ -198,7 +218,7 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
     const item = {
       id: menuItem.id,
       name: menuItem.name,
-      price: basePrice + supplementsPrice, // Prix incluant les suppléments
+      price: (basePrice * quantity) + supplementsPrice, // Prix de base multiplié par la quantité + suppléments
       quantity: quantity > 0 ? quantity : 1,
       image: menuItem.image,
       description: menuItem.description,

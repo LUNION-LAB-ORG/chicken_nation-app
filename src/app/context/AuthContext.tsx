@@ -233,4 +233,23 @@ export function useAuth() {
   return context;
 }
 
+/**
+ * Exporte les données de l'utilisateur actuel (utilisable en dehors des composants React)
+ * @returns {Promise<Object|null>} Les données de l'utilisateur ou null si non connecté
+ */
+export const getCurrentUser = async () => {
+  try {
+    const { STORAGE_KEYS, getData } = require('@/services/storage/storage');
+    const userData = await getData(STORAGE_KEYS.USER.PROFILE);
+    
+    if (userData) {
+      return userData;
+    }
+    return null;
+  } catch (error) {
+    console.error("Erreur lors de la récupération de l'utilisateur:", error);
+    return null;
+  }
+};
+
 export default AuthProvider;

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { MapPin, Plus, Trash2 } from "lucide-react-native";
+import { MapPin, Plus, Trash2, Edit2 } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import { getUserAddresses, deleteUserAddress, Address } from "@/services/api/address";
@@ -23,7 +23,7 @@ import GradientButton from "@/components/ui/GradientButton";
 const AddressesScreen: React.FC = () => {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | number | null>(null);
   const router = useRouter();
   const { setAddressDetails, setCoordinates, setLocationType } = useLocation();
 
@@ -87,7 +87,7 @@ const AddressesScreen: React.FC = () => {
   /**
    * Supprime une adresse
    */
-  const handleDeleteAddress = async (addressId: number) => {
+  const handleDeleteAddress = async (addressId: string | number) => {
     Alert.alert(
       "Supprimer l'adresse",
       "Êtes-vous sûr de vouloir supprimer cette adresse ?",
@@ -120,38 +120,62 @@ const AddressesScreen: React.FC = () => {
     );
   };
 
-  /**
-   * Ajoute une nouvelle adresse
-   */
+ 
   const handleAddAddress = () => {
     router.push("/location/manualset");
+  };
+
+ 
+  const handleEditAddress = (address: Address) => {
+    if (!address.id) return;
+    
+    router.push({
+      pathname: "/location/edit-address",
+      params: { id: address.id.toString() }
+    });
   };
 
   /**
    * Rendu d'un élément de la liste des adresses
    */
   const renderAddressItem = ({ item }: { item: Address }) => (
-    <TouchableOpacity
-      className="bg-white rounded-xl p-4 mb-3 flex-row items-center"
+    <View
+      className="bg-white rounded-xl p-4 mb-3"
       style={styles.addressCard}
-      onPress={() => handleSelectAddress(item)}
     >
-      <View className="bg-primary-50 p-2 rounded-full mr-3">
-        <MapPin size={20} color="#FF6B00" />
-      </View>
-      <View className="flex-1">
-        <Text className="text-gray-900 font-sofia-medium text-base">{item.title}</Text>
-        <Text className="text-gray-500 font-sofia-regular text-sm" numberOfLines={2}>
-          {item.address}
-        </Text>
-      </View>
       <TouchableOpacity
-        className="p-2"
-        onPress={() => item.id && handleDeleteAddress(item.id)}
+        className="flex-row items-center"
+        onPress={() => handleSelectAddress(item)}
       >
-        <Trash2 size={18} color="#FF3B30" />
+        <View className="bg-primary-50 p-2 rounded-full mr-3">
+          <MapPin size={20} color="#FF6B00" />
+        </View>
+        <View className="flex-1">
+          <Text className="text-gray-900 font-sofia-medium text-base">{item.title}</Text>
+          <Text className="text-gray-500 font-sofia-regular text-sm" numberOfLines={2}>
+            {item.address}
+          </Text>
+        </View>
       </TouchableOpacity>
-    </TouchableOpacity>
+      
+      <View className="flex-row mt-3 pt-3 border-t border-gray-100 justify-end">
+        <TouchableOpacity 
+          className="mr-4 flex-row items-center" 
+          onPress={() => handleEditAddress(item)}
+        >
+          <Edit2 size={16} color="#666" />
+          <Text className="text-gray-600 font-sofia-regular ml-1">Modifier</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          className="flex-row items-center" 
+          onPress={() => handleDeleteAddress(item.id as string | number)}
+        >
+          <Trash2 size={16} color="#FF3B30" />
+          <Text className="text-red-500 font-sofia-regular ml-1">Supprimer</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   return (
@@ -160,7 +184,7 @@ const AddressesScreen: React.FC = () => {
       
       {/* Header */}
       <DynamicHeader
-        displayType="back-with-title"
+        displayType="back"
         title="Mes adresses"
         showCart={true}
       />
@@ -177,10 +201,10 @@ const AddressesScreen: React.FC = () => {
               Vous n'avez pas encore d'adresses enregistrées
             </Text>
             <GradientButton
-              text="Ajouter une adresse"
               onPress={handleAddAddress}
-              width={250}
-            />
+            >
+              <Text className="text-white text-lg font-urbanist-medium">Ajouter une adresse</Text>
+            </GradientButton>
           </View>
         ) : (
           <>
@@ -194,10 +218,13 @@ const AddressesScreen: React.FC = () => {
             
             <View className="absolute bottom-8 right-4 left-4">
               <GradientButton
-                text="Ajouter une adresse"
                 onPress={handleAddAddress}
-                icon={<Plus size={20} color="#FFFFFF" />}
-              />
+              >
+                <View className="flex-row items-center">
+                  <Plus size={20} color="#FFFFFF" />
+                  <Text className="text-white text-lg font-urbanist-medium ml-2">Ajouter une adresse</Text>
+                </View>
+              </GradientButton>
             </View>
           </>
         )}

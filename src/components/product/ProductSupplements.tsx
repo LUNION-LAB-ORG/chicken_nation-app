@@ -76,7 +76,7 @@ const ProductSupplements: React.FC<ProductSupplementsProps> = ({
           onPress={onToggleCustomizations}
         >
           <Text className="text-lg font-sofia-light text-black/70">
-            Personnaliser
+            {showCustomizations ? "En accompagnement" : "Personnaliser"}
           </Text>
           <Image
             source={
@@ -98,9 +98,9 @@ const ProductSupplements: React.FC<ProductSupplementsProps> = ({
   // Rendu des suppléments payants
   const renderPaidSupplements = () => {
     return paidSupplements.map((category) => (
-      <View key={category.category} className="mt-4 bg-gray-100 p-4 rounded-3xl">
+      <View key={category.category} className="  bg-gray-100 rounded-3xl">
         <Text className="text-lg font-sofia-medium text-black/70">
-          {category.type}
+    
           {category.isIncluded && (
             <Text className="text-sm font-sofia-light text-green-600">
               {" "}
@@ -112,7 +112,7 @@ const ProductSupplements: React.FC<ProductSupplementsProps> = ({
         {category.items.map((item) => (
           <View
             key={item.id}
-            className="flex-row items-center justify-between py-1 border-b border-gray-100"
+            className="flex-row items-center justify-between py-2 border-b border-gray-100"
           >
             <View className="flex-1">
               <Text className="font-urbanist-medium">

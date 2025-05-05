@@ -7,11 +7,15 @@ import OnboardingProvider from "./context/OnboardingContext";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { customFonts } from "../utils/fonts";
-import { LocationProvider } from "./context/LocationContext";
 import useCartStore from "@/store/cartStore";
+import useLocationStore from "@/store/locationStore";
 
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * Composant principal de l'application
+ * Gère le chargement des polices, l'initialisation des stores et l'affichage du splash screen
+ */
 export default function Layout() {
   const [fontsLoaded] = useFonts(customFonts);
   const [appIsReady, setAppIsReady] = useState(false);
@@ -31,6 +35,7 @@ export default function Layout() {
         setAppIsReady(true);
       }
     }
+
     prepare();
   }, []);
 
@@ -47,11 +52,9 @@ export default function Layout() {
   return (
     <OnboardingProvider>
       <AuthProvider>
-        <LocationProvider>
-          <View style={StyleSheet.absoluteFill}>
-            <RootNavigator />
-          </View>
-        </LocationProvider>
+        <View style={StyleSheet.absoluteFill}>
+          <RootNavigator />
+        </View>
       </AuthProvider>
     </OnboardingProvider>
   );

@@ -91,12 +91,15 @@ const AddressSettings = () => {
   }, []);
 
   const handleEditAddress = (address: Address) => {
+    console.log("Édition de l'adresse:", JSON.stringify(address, null, 2));
     router.push({
-      pathname: "/(common)/location",
+      pathname: "/location/edit-address",
       params: { 
-        addressId: address.id,
-        latitude: address.coordinates.latitude,
-        longitude: address.coordinates.longitude
+        id: address.id,
+        title: address.name,
+        address: address.address,
+        latitude: String(address.coordinates.latitude),
+        longitude: String(address.coordinates.longitude)
       }
     });
   };

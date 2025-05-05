@@ -29,10 +29,7 @@ import ProductInfo from "@/components/product/ProductInfo";
 import ProductSupplements from "@/components/product/ProductSupplements";
 import AddToCartButton from "@/components/product/AddToCartButton";
 
-/**
- * Page de détail d'un produit
- * Permet de voir les détails, ajouter aux favoris, personnaliser et ajouter au panier
- */
+ 
 const ProductId = () => {
   const { productId } = useLocalSearchParams<{ productId: string }>();
   const { isAuthenticated, accessToken } = useAuth();

@@ -139,23 +139,29 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
 
       const formattedAddress = formatAddress(tempFormData);
 
-      // Préparer les données d'adresse pour le backend
-      const addressData: Address = {
-        title: addressTitle,
-        address: formattedAddress,
-        street: tempFormData.address || "",
-        city: tempFormData.city || "Abidjan",
-        longitude: 0, // Ces valeurs seront mises à jour si on a des coordonnées
-        latitude: 0
-      };
-
-      // Si nous avons des coordonnées, les utiliser
-      if (locationData.coordinates) {
-        addressData.longitude = locationData.coordinates.longitude;
-        addressData.latitude = locationData.coordinates.latitude;
+      // S'assurer que l'adresse n'est pas vide
+      if (!formattedAddress.trim()) {
+        Alert.alert(
+          "Champ obligatoire",
+          "L'adresse ne peut pas être vide",
+          [{ text: "OK" }]
+        );
+        setIsLoading(false);
+        return;
       }
 
+      // Préparer les données d'adresse pour le backend
+      const addressData: Address = {
+        title: addressTitle || "Adresse", // Valeur par défaut si le titre est vide
+        address: formattedAddress, // S'assurer que ce champ n'est jamais vide
+        street: tempFormData.address || formattedAddress, // Utiliser l'adresse formatée comme fallback
+        city: tempFormData.city || "Abidjan",
+        longitude: -4.0082,
+        latitude: 5.3599
+      };
+
       // Enregistrer l'adresse dans le backend
+      console.log("Données d'adresse envoyées:", JSON.stringify(addressData, null, 2));
       const savedAddress = await addUserAddress(addressData);
       
       if (savedAddress) {
@@ -165,7 +171,7 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
         const addressDetails = {
           ...tempFormData,
           formattedAddress,
-          title: addressTitle,
+          title: addressTitle || "Adresse",
         };
 
         await setLocationType("manual");
@@ -176,6 +182,12 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
           await setCoordinates({
             latitude: savedAddress.latitude,
             longitude: savedAddress.longitude
+          });
+        } else {
+          // Utiliser les coordonnées par défaut
+          await setCoordinates({
+            latitude: addressData.latitude,
+            longitude: addressData.longitude
           });
         }
 

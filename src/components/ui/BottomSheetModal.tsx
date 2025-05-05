@@ -10,18 +10,8 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import {
-  Menu,
-  CalendarRange,
-  MapPin,
-  ShoppingBag,
-  Gift,
-  Heart,
-  Bell,
-  HelpCircle,
-  UserPlus,
-  Settings,
-  LogOut,
-  ChevronDown,
+  Heart, 
+  Settings, 
 } from "lucide-react-native";
 import { useAuth } from "@/app/context/AuthContext";
 import ConfirmLogoutModal from "./ConfirmLogoutModal";
@@ -198,7 +188,7 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
                 {user ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : "User name"}
               </Text>
               <Text className="text-gray-500 text-sm">
-                {user?.email || ""}
+                +225 {user?.phone || ""}
               </Text>
             </View>
           </View>

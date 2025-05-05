@@ -22,6 +22,8 @@ import Animated, {
 
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
+import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
+
 /**
  * Écran d'accueil pour les utilisateurs invités
  * Affiche la bannière d'accueil, la barre de recherche, la localisation et les catégories
@@ -49,6 +51,14 @@ const Home: React.FC = () => {
     transform: [{ scale: headerScale.value }],
     opacity: interpolate(scrollY.value, [0, 100], [1, 0.8], Extrapolate.CLAMP),
   }));
+
+  // Réinitialiser le type de commande à DELIVERY par défaut au chargement de la page d'accueil
+  useEffect(() => {
+   
+    const { resetOrderTypeToDefault } = useOrderTypeStore.getState();
+    resetOrderTypeToDefault();
+    
+  }, []);
 
   return (
     <View className="flex-1 bg-white">

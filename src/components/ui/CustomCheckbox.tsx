@@ -30,13 +30,14 @@ const CustomCheckbox: React.FC<CustomCheckboxProps> = ({
         colors={["#F17922", "#FA6345"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        className="w-6 h-6 rounded-md items-center justify-center"
+        style={{ borderRadius: 6 }}
+        className="w-8 h-8 items-center justify-center"
       >
-        <FontAwesome name="check" size={14} color="white" />
+        <FontAwesome name="check" size={16} color="white" />
       </LinearGradient>
     ) : (
       <View
-        className="w-6 h-6 border rounded-md border-gray-400 bg-white items-center justify-center"
+        className="w-8 h-8 border rounded-md border-gray-400 bg-white items-center justify-center"
       />
     )}
   </TouchableOpacity>

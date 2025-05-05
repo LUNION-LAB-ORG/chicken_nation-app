@@ -161,13 +161,14 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
    * Met à jour les détails d'adresse 
    */
   const setAddressDetails = async (details: AddressDetails): Promise<void> => {
-   
-    if (!details.formattedAddress) {
+ 
+    // Si aucune adresse formatée n'est fournie, essayer de la construire
+    if (!details.formattedAddress || details.formattedAddress.trim() === "") {
       
       const parts = [];
       if (details.streetNumber) parts.push(details.streetNumber);
-      if (details.road || details.address)
-        parts.push(details.road || details.address);
+      if (details.road) parts.push(details.road);
+      if (details.address) parts.push(details.address);
       if (details.residenceName) parts.push(details.residenceName);
       if (details.doorNumber) parts.push(`Porte ${details.doorNumber}`);
 
@@ -177,10 +178,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       let formattedAddress = parts.join(", ");
       if (locationParts.length > 0) {
-        formattedAddress += " - " + locationParts.join(" ");
+        formattedAddress += (formattedAddress ? " - " : "") + locationParts.join(" ");
       }
 
-      details.formattedAddress = formattedAddress;
+      details.formattedAddress = formattedAddress || details.address || "";
     }
 
     // Ne jamais afficher les coordonnées brutes
@@ -191,13 +192,21 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       details.formattedAddress = "Position actuelle";
     }
 
+    // S'assurer que l'adresse n'est pas vide
+    if (!details.formattedAddress || details.formattedAddress.trim() === "") {
+      if (details.address) {
+        details.formattedAddress = details.address;
+      } else if (details.city) {
+        details.formattedAddress = details.city;
+      }
+    }
+
     const newData = {
       ...locationData,
       addressDetails: details,
     };
 
     await saveLocationData(newData);
-    console.log("Address details updated:", details);
   };
 
   /**

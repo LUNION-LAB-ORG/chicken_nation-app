@@ -3,10 +3,11 @@ import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator } fr
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import { menuItems } from "@/data/MockedData";
 import useOrderStore from "@/store/orderStore";
 import { OrderResponse, OrderStatus, OrderType } from "@/services/api/orders";
 import { formatDate } from "@/utils/dateHelpers";
+import { AuthStorage } from "@/services/storage/auth-storage";
+import { formatImageUrl } from "@/utils/imageHelpers";
 
 /**
  * Types définissant les filtres et statuts des commandes
@@ -23,6 +24,8 @@ const statusMapping: Record<string, { text: string; color: string }> = {
   READY: { text: "Prêt", color: "text-green-500" },
   DELIVERED: { text: "Livré", color: "text-green-500" },
   CANCELLED: { text: "Annulé", color: "text-red-500" },
+  IN_PROGRESS: { text: "En cours", color: "text-blue-500" },
+  PICKED_UP: { text: "En cours", color: "text-blue-500" },
 };
 
 /**
@@ -31,8 +34,8 @@ const statusMapping: Record<string, { text: string; color: string }> = {
 const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   const router = useRouter();
   
-  // Récupère le premier article de la commande pour l'affichage
-  const firstItem = order.items && order.items.length > 0 ? order.items[0] : null;
+  // Récupérer le premier article de la commande pour l'affichage
+  const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
   
   /**
    * Formate la date au format "Initié le JJ.MM.AAAA"
@@ -58,21 +61,68 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   /**
    * Détermine si la commande est en cours
    */
-  const isPending = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus);
+  const isPending = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus);
 
   /**
-   * Détermine le type de paiement (à implémenter selon les données réelles)
+   * Extraire le moyen de paiement depuis la note
    */
-  const paymentMethod = "mobile_money"; // À remplacer par les données réelles quand disponibles
+  const extractPaymentMethod = (note: string | undefined): string => {
+    if (!note) return "Mobile Money";
+    
+    const lowerNote = note.toLowerCase();
+    if (lowerNote.includes("wave")) return "Wave";
+    if (lowerNote.includes("orange money") || lowerNote.includes("orange")) return "Orange Money";
+    if (lowerNote.includes("moov money") || lowerNote.includes("moov")) return "Moov Money";
+    if (lowerNote.includes("mtn") || lowerNote.includes("mtn money")) return "MTN Mobile Money";
+    if (lowerNote.includes("carte") || lowerNote.includes("card") || lowerNote.includes("visa") || lowerNote.includes("mastercard")) return "Carte bancaire";
+    if (lowerNote.includes("espèce") || lowerNote.includes("espece") || lowerNote.includes("cash")) return "Espèces";
+    
+    return "Mobile Money";
+  };
+  
+  // Utiliser les données directement depuis la structure de la commande
+  const paymentMethod = extractPaymentMethod(order.note);
+  
+  /**
+   * Formater le prix avec séparateur de milliers
+   */
+  const formatPrice = (price: number | undefined) => {
+    if (price === undefined || price === null) return "0 FCFA";
+    return `${price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} FCFA`;
+  };
+
+  // Récupérer les données du plat principal
+  const dishName = firstItem?.dish?.name || "Commande";
+  const dishImageRaw = firstItem?.dish?.image || null;
+  const dishImage = dishImageRaw ? formatImageUrl(dishImageRaw) : null;
+  
+  // Récupérer le prix correct
+  const orderPrice = order.net_amount || order.amount || 0;
 
   return (
     <View className="bg-white rounded-2xl mb-4">
       {/* En-tête avec image et détails */}
       <View className="flex-row p-4 items-center gap-4">
-     
+        {/* Image du plat - toujours afficher une image */}
+        <View className="w-24 h-24 rounded-xl overflow-hidden border-[1px] border-orange-100">
+          {dishImage ? (
+            <Image 
+              source={{ uri: dishImage }} 
+              className="w-full h-full"
+              defaultSource={require("@/assets/images/food2.png")}
+              style={{ resizeMode: "contain" }}
+            />
+          ) : (
+            <Image 
+              source={require("@/assets/images/food2.png")} 
+              className="w-full h-full"
+            />
+          )}
+        </View>
+        
         <View className="flex-1">
           <Text className="font-sofia-medium text-base text-gray-900">
-            {firstItem?.dish?.name || "Commande"}
+            {dishName}
           </Text>
           {/* Affiche la date pour les commandes terminées ou annulées */}
           {isCompleted && (
@@ -81,8 +131,8 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
             </Text>
           )}
           <View className="flex-row items-center gap-4 mt-1">
-            <Text className="font-sofia-bold text-orange-500">
-              {order.final_amount} FCFA
+            <Text className="font-sofia-medium text-[#F97316]">
+              {formatPrice(orderPrice)}
             </Text>
             {/* Affichage conditionnel du statut de la commande */}
             {order.status === OrderStatus.CANCELLED ? (
@@ -96,7 +146,7 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
               <View className="flex-row items-center ml-10">
                 <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
                 <Text className="text-green-500 text-sm font-sofia-regular">
-                  {paymentMethod === 'mobile_money' ? 'Payé via Mobile Money' : 'Payé via Carte bancaire'}
+                  {`Payé via ${paymentMethod}`}
                 </Text>
               </View>
             )}
@@ -110,10 +160,10 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
           {order.status === OrderStatus.DELIVERED ? (
             <View className="flex-row gap-4">
               <TouchableOpacity 
-                className="py-3 px-6 rounded-xl bg-orange-500 self-start"
+                className="py-[6px] px-[32px] rounded-full items-center justify-center bg-[#F97316] self-start"
                 onPress={handleReorder}
               >
-                <Text className="text-white font-sofia-medium">
+                <Text className="text-white text-[14px] font-sofia-regular">
                   Commander à nouveau
                 </Text>
               </TouchableOpacity>
@@ -122,14 +172,14 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
           ) : (
             <View className="flex-row gap-4">
               <TouchableOpacity 
-                className="flex-1 py-3 rounded-xl border border-orange-500"
+                className="flex-1 py-[6px]  rounded-full border-[1px] border-[#F97316]"
               >
-                <Text className="text-center text-orange-500 font-sofia-medium">
+                <Text className="text-center text-[#F97316] font-sofia-medium">
                   Annuler
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                className="flex-1 py-3 rounded-xl bg-orange-500"
+                className="flex-1 py-[6px]  rounded-full bg-[#F97316]"
               >
                 <Text className="text-center text-white font-sofia-medium">
                   Suivie de commande
@@ -150,13 +200,13 @@ const EmptyState: React.FC<{ activeFilter: FilterType }> = ({ activeFilter }) =>
   const getMessage = () => {
     switch (activeFilter) {
       case "en_cours":
-        return "Tu n'as aucune commande en cours";
+        return "Vous n'avez pas de commandes en cours.";
       case "termines":
-        return "Tu n'as aucune commande terminée";
+        return "Vous n'avez pas encore de commandes terminées.";
       case "annuler":
-        return "Tu n'as aucune commande annulée";
+        return "Vous n'avez pas de commandes annulées.";
       default:
-        return "Tu n'as aucune commande";
+        return "Aucune commande disponible.";
     }
   };
 
@@ -186,13 +236,13 @@ const FilterButton: React.FC<{
 }> = ({ label, isActive, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
-    className={`py-2 px-6 rounded-full ${
-      isActive ? "bg-orange-500" : "bg-gray-100"
+    className={`py-[4px] px-[32px] rounded-full ${
+      isActive ? "bg-[#F97316]" : "bg-white border-[1px] border-[#F97316]"
     }`}
   >
     <Text
       className={`font-sofia-medium ${
-        isActive ? "text-white" : "text-gray-500"
+        isActive ? "text-white" : "text-[#F97316]"
       }`}
     >
       {label}
@@ -207,29 +257,74 @@ const Orders = () => {
   const router = useRouter();
   const { orders, fetchOrders, isLoading, error } = useOrderStore();
   const [activeFilter, setActiveFilter] = useState<FilterType>("en_cours");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+
+  // Récupérer l'ID de l'utilisateur connecté
+  useEffect(() => {
+    const getUserId = async () => {
+      const userData = await AuthStorage.getUserData();
+      if (userData?.id) {
+        setCurrentUserId(userData.id);
+       
+      } else {
+       
+      }
+    };
+    getUserId();
+  }, []);
 
   // Charger les commandes au montage du composant
   useEffect(() => {
-    fetchOrders();
+    fetchOrders().then(() => {
+    
+      if (orders && orders.length > 0) {
+       
+        if (orders[0].order_items && orders[0].order_items.length > 0) {
+        
+          
+          if (orders[0].order_items[0].dish) {
+            
+          }
+        }
+      }
+    });
   }, []);
 
-  // Filtrer les commandes selon le filtre actif
+  // Filtrer les commandes selon le filtre actif et l'ID de l'utilisateur
   const filteredOrders = useMemo(() => {
     if (orders.length === 0) return [];
 
+    // D'abord filtrer par utilisateur si un ID est disponible
+    let userOrders = orders;
+    if (currentUserId) {
+      userOrders = orders.filter(order => {
+      
+        const orderUserId = order.customer?.id || order.customer_id;
+        const matches = orderUserId === currentUserId;
+        if (!matches) {
+         
+        }
+        return matches;
+      });
+      
+    } else {
+      
+    }
+
+    // Ensuite filtrer par statut selon le filtre actif
     switch (activeFilter) {
       case "en_cours":
-        return orders.filter(order => 
-          [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY].includes(order.status as OrderStatus)
+        return userOrders.filter(order => 
+          [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus)
         );
       case "termines":
-        return orders.filter(order => order.status === OrderStatus.DELIVERED);
+        return userOrders.filter(order => order.status === OrderStatus.DELIVERED);
       case "annuler":
-        return orders.filter(order => order.status === OrderStatus.CANCELLED);
+        return userOrders.filter(order => order.status === OrderStatus.CANCELLED);
       default:
-        return orders;
+        return userOrders;
     }
-  }, [orders, activeFilter]);
+  }, [orders, activeFilter, currentUserId]);
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -243,10 +338,11 @@ const Orders = () => {
             <Image
               source={require("@/assets/icons/arrow-back.png")}
               className="w-10 h-10"
+              style={{ resizeMode: "contain" }}
             />
           </TouchableOpacity>
           <Text className="text-xl font-sofia-medium text-gray-900">
-            Mes commandes
+            Commandes
           </Text>
           <View className="w-10" />
         </View>
@@ -257,9 +353,15 @@ const Orders = () => {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingBottom: 16,
+            flexGrow: 1,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
         >
-          <View className="flex-row gap-3">
+          <View className="flex-row gap-3 justify-center">
             <FilterButton
               label="En cours"
               isActive={activeFilter === "en_cours"}

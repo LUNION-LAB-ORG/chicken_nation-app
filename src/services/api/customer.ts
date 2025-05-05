@@ -40,6 +40,22 @@ export interface CustomerResponse {
   image: string;
   created_at: string;
   updated_at: string;
+  entity_status?: string;
+  addresses?: Array<{
+    id: string;
+    title: string;
+    address: string;
+    street?: string;
+    city: string;
+    longitude?: number;
+    latitude?: number;
+    customer_id: string;
+    entity_status: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  favorites?: any[];
+  notification_settings?: any;
 }
 
  
