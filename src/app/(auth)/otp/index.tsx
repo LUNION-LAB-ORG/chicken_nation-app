@@ -10,7 +10,8 @@ import GradientButton from "@/components/ui/GradientButton";
 import LoadingModal from "@/components/ui/LoadingModal";
 import Spinner from "@/components/ui/Spinner";
 import ErrorModal from "@/components/ui/ErrorModal";
-import { verifyOTP, requestOTP, lastGeneratedOTP } from "@/services/api/auth"; 
+import SuccessModal from "@/components/ui/SuccessModal";
+import { verifyOTP, requestOTP } from "@/services/api/auth"; 
 import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/app/context/AuthContext";
 import { setAuthToken } from "@/services/api/api";
@@ -47,24 +48,8 @@ const OTP: React.FC = () => {
 
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-
-  // Effet pour auto-remplir l'OTP si disponible (pour le développement uniquement)
-  useEffect(() => {
-    if (lastGeneratedOTP && lastGeneratedOTP.length === 4) {
-      console.log('Auto-remplissage de l\'OTP:', lastGeneratedOTP);
-      setState(prev => ({
-        ...prev,
-        code: lastGeneratedOTP
-      }));
-      
-      // Attendre un court instant avant de valider automatiquement
-      const timer = setTimeout(() => {
-        handleValidateOTP(lastGeneratedOTP);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Gestion du timer pour le renvoi du code
   useEffect(() => {
@@ -121,7 +106,8 @@ const OTP: React.FC = () => {
         isResending: false,
       }));
       
-      Alert.alert("Succès", "Un nouveau code OTP a été envoyé à votre numéro");
+      setSuccessMessage("Un nouveau code OTP a été envoyé à votre numéro");
+      setShowSuccessModal(true);
     } catch (error) {
       setState(prev => ({
         ...prev,
@@ -144,16 +130,13 @@ const OTP: React.FC = () => {
         otp: codeToValidate,
         phone: localPhone,
       };
-      console.log('Sending OTP verification with payload:', payload);
 
       // Appel à l'API pour vérifier le code OTP
       const response = await verifyOTP(payload);
       
-      console.log('OTP verification successful:', response);
-      
-      // Vérifier que nous avons bien reçu les tokens
-      if (!response.token || !response.refreshToken) {
-        throw new Error("Tokens d'authentification manquants dans la réponse");
+      // Vérifier que nous avons bien reçu le token
+      if (!response.token) {
+        throw new Error("Token d'authentification manquant dans la réponse");
       }
       
       // Utiliser le nouveau contexte d'authentification pour stocker les informations utilisateur
@@ -167,16 +150,26 @@ const OTP: React.FC = () => {
           image: response.image,
           created_at: response.created_at,
           updated_at: response.updated_at,
-          phone: localPhone // Ajout du numéro de téléphone
+          phone: localPhone
         },
-        response.token,
-        response.refreshToken
+        response.token
       );
       
-      console.log('User logged in successfully');
-      
       // Vérifier si l'utilisateur existe déjà ou s'il faut compléter son profil
-      const profileComplete = isProfileComplete(response);
+      const userData = {
+        id: response.id,
+        first_name: response.first_name,
+        last_name: response.last_name,
+        birth_day: response.birth_day,
+        email: response.email,
+        image: response.image,
+        created_at: response.created_at,
+        updated_at: response.updated_at,
+        phone: localPhone
+      };
+
+      const profileComplete = isProfileComplete(userData);
+      console.log('[OTP] Profile complete:', profileComplete, userData);
 
       if (profileComplete) {
         // Compte complet, accès direct à l'app
@@ -185,8 +178,7 @@ const OTP: React.FC = () => {
         // Compte incomplet (nouvel inscrit ou profil à compléter)
         router.replace("/(auth)/create-account/");
       }
-    } catch (error) {
-      // console.error('OTP validation error:', error); // Retiré à la demande de l'utilisateur
+    } catch (error: any) {
       const message = error instanceof Error ? error.message : "Code OTP invalide";
       setState((prev) => ({
         ...prev,
@@ -338,6 +330,11 @@ const OTP: React.FC = () => {
         visible={showErrorModal}
         message={errorMessage}
         onClose={() => setShowErrorModal(false)}
+      />
+      <SuccessModal
+        visible={showSuccessModal}
+        message={successMessage}
+        onClose={() => setShowSuccessModal(false)}
       />
     </View>
   );

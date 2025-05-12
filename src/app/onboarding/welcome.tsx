@@ -1,12 +1,12 @@
 import { View, TouchableOpacity, Text } from "react-native";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useOnboarding } from "../context/OnboardingContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import GradientText from "@/components/ui/GradientText";
 import NextButton from "@/components/ui/NextButton";
 import Animated, { SlideInRight, SlideOutLeft } from "react-native-reanimated";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 
 /**
@@ -26,6 +26,15 @@ const WelcomeScreen: React.FC = () => {
   const { user } = useAuth();
   const [step, setStep] = useState<number>(1);
   const router = useRouter();
+
+  // Déterminer si l'utilisateur vient de créer son compte
+  useEffect(() => {
+    // Si l'utilisateur est authentifié, on affiche un message de bienvenue personnalisé
+    if (user && user.first_name) {
+      // On pourrait personnaliser le contenu ici si nécessaire
+      console.log(`Bienvenue ${user.first_name} !`);
+    }
+  }, [user]);
 
   // Définition des étapes d'onboarding
   const steps: OnboardingStep[] = [
@@ -51,7 +60,16 @@ const WelcomeScreen: React.FC = () => {
    */
   const finishOnboarding = async (): Promise<void> => {
     await completeOnboarding();
-    router.push(user ? "/(tabs-user)/" : "/(tabs-guest)/");
+    
+    // Si l'utilisateur est authentifié, le rediriger vers l'interface utilisateur
+    // Sinon, le rediriger vers l'interface invité
+    if (user) {
+      console.log("Redirection vers l'interface utilisateur authentifié");
+      router.replace("/(tabs-user)/");
+    } else {
+      console.log("Redirection vers l'interface invité");
+      router.replace("/(tabs-guest)/");
+    }
   };
 
   /**

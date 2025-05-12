@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
+import ErrorModal from "@/components/ui/ErrorModal";
 import useOrderStore from "@/store/orderStore";
-import { OrderResponse, OrderStatus, OrderType } from "@/services/api/orders";
+import { OrderResponse, OrderStatus, getActiveOrders, getCompletedOrders, getCancelledOrders } from "@/services/api/orders";
 import { formatDate } from "@/utils/dateHelpers";
 import { AuthStorage } from "@/services/storage/auth-storage";
 import { formatImageUrl } from "@/utils/imageHelpers";
@@ -29,10 +30,226 @@ const statusMapping: Record<string, { text: string; color: string }> = {
 };
 
 /**
+ * Composant pour la modal de tracking
+ */
+const TrackingModal: React.FC<{
+  visible: boolean;
+  order: OrderResponse | null;
+  onClose: () => void;
+}> = ({ visible, order, onClose }) => {
+  if (!order) return null;
+
+  const steps = [
+    { 
+      status: OrderStatus.PENDING, 
+      label: "Commande reçue",
+      description: "Votre commande a été reçue et est en attente de confirmation",
+      icon: require("@/assets/icons/poulet.png")
+    },
+    { 
+      status: OrderStatus.CONFIRMED, 
+      label: "Commande confirmée",
+      description: "Votre commande a été confirmée et sera préparée",
+      icon: require("@/assets/icons/chicken.png")
+    },
+    { 
+      status: OrderStatus.PREPARING, 
+      label: "En préparation",
+      description: "Votre commande est en cours de préparation",
+      icon: require("@/assets/icons/restaurant.png")
+    },
+    { 
+      status: OrderStatus.READY, 
+      label: "Prêt",
+      description: "Votre commande est prête pour la livraison",
+      icon: require("@/assets/icons/package_orange.png")
+    },
+    { 
+      status: OrderStatus.DELIVERED, 
+      label: "Livré",
+      description: "Votre commande a été livrée",
+      icon: require("@/assets/icons/localisation.png")
+    }
+  ];
+
+  const getCurrentStepIndex = () => {
+    return steps.findIndex(step => step.status === order.status);
+  };
+
+  const isStepCompleted = (stepStatus: OrderStatus) => {
+    const currentIndex = getCurrentStepIndex();
+    const stepIndex = steps.findIndex(step => step.status === stepStatus);
+    return stepIndex <= currentIndex;
+  };
+
+  const getEstimatedTime = () => {
+    const currentIndex = getCurrentStepIndex();
+    if (currentIndex === -1) return "Non disponible";
+    
+    const remainingSteps = steps.length - currentIndex - 1;
+    if (remainingSteps === 0) return "Livré";
+    
+    const estimatedMinutes = remainingSteps * 15; // 15 minutes par étape
+    return `${estimatedMinutes} minutes`;
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 bg-black/50 justify-end">
+        <View className="bg-white rounded-t-3xl p-6 max-h-[90%]">
+          {/* Header */}
+          <View className="flex-row justify-between items-center mb-6">
+            <View>
+              <Text className="text-xl font-sofia-medium text-gray-900">
+                Suivi de commande
+              </Text>
+              <Text className="text-sm text-gray-500 font-sofia-regular">
+                Référence: {order.reference}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose}>
+              <Image
+                source={require("@/assets/icons/close.png")}
+                className="w-6 h-6"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Temps estimé */}
+          <View className="bg-orange-50 rounded-xl p-4 mb-6">
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text className="text-base font-sofia-medium text-gray-900">
+                  Temps estimé
+                </Text>
+                <Text className="text-sm text-gray-500 font-sofia-regular">
+                  Temps restant avant livraison
+                </Text>
+              </View>
+              <Text className="text-lg font-sofia-medium text-[#F97316]">
+                {getEstimatedTime()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Timeline des étapes */}
+          <ScrollView className="space-y-6">
+            {steps.map((step, index) => (
+              <View key={step.status} className="flex-row">
+                {/* Ligne verticale */}
+                {index < steps.length - 1 && (
+                  <View 
+                    className={`absolute left-6 top-12 w-0.5 h-16 ${
+                      isStepCompleted(step.status) ? "bg-[#F97316]" : "bg-gray-200"
+                    }`}
+                  />
+                )}
+                
+                {/* Icône et point */}
+                <View className="items-center">
+                  <View 
+                    className={`w-12 h-12 rounded-full items-center justify-center ${
+                      isStepCompleted(step.status) ? "bg-[#F97316]" : "bg-gray-200"
+                    }`}
+                  >
+                    <Image
+                      source={step.icon}
+                      className="w-6 h-6"
+                      style={{ tintColor: isStepCompleted(step.status) ? "#FFFFFF" : "#9CA3AF" }}
+                    />
+                  </View>
+                </View>
+
+                {/* Contenu */}
+                <View className="ml-4 flex-1">
+                  <Text 
+                    className={`font-sofia-medium text-base ${
+                      isStepCompleted(step.status) ? "text-gray-900" : "text-gray-400"
+                    }`}
+                  >
+                    {step.label}
+                  </Text>
+                  <Text 
+                    className={`text-sm font-sofia-regular ${
+                      isStepCompleted(step.status) ? "text-gray-600" : "text-gray-400"
+                    }`}
+                  >
+                    {step.description}
+                  </Text>
+                  {step.status === order.status && (
+                    <View className="mt-2 bg-orange-50 rounded-lg p-2">
+                      <Text className="text-sm text-[#F97316] font-sofia-medium">
+                        En cours
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Détails de la commande */}
+          <View className="border-t border-gray-200 pt-4 mt-4">
+            <Text className="text-base font-sofia-medium text-gray-900 mb-3">
+              Détails de la commande
+            </Text>
+            
+            {/* Adresse de livraison */}
+            {order.address && (
+              <View className="mb-3">
+                <Text className="text-sm font-sofia-medium text-gray-500">
+                  Adresse de livraison
+                </Text>
+                <Text className="text-base font-sofia-regular text-gray-900">
+                  {order.address.address}
+                </Text>
+                {order.address.details && (
+                  <Text className="text-sm font-sofia-regular text-gray-500">
+                    {order.address.details}
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {/* Informations de contact */}
+            <View className="mb-3">
+              <Text className="text-sm font-sofia-medium text-gray-500">
+                Contact
+              </Text>
+              <Text className="text-base font-sofia-regular text-gray-900">
+                {order.customer?.phone || order.phone}
+              </Text>
+            </View>
+
+            {/* Montant */}
+            <View className="flex-row justify-between items-center">
+              <Text className="text-base font-sofia-medium text-gray-900">
+                Montant total
+              </Text>
+              <Text className="text-lg font-sofia-medium text-[#F97316]">
+                {order.amount} FCFA
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+/**
  * Composant représentant une carte de commande individuelle
  */
 const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   const router = useRouter();
+  const { fetchOrders } = useOrderStore();
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
   
   // Récupérer le premier article de la commande pour l'affichage
   const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
@@ -98,6 +315,13 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   
   // Récupérer le prix correct
   const orderPrice = order.net_amount || order.amount || 0;
+
+  /**
+   * Gère le clic sur le bouton d'annulation
+   */
+  const handleCancel = () => {
+    setShowErrorModal(true);
+  };
 
   return (
     <View className="bg-white rounded-2xl mb-4">
@@ -172,14 +396,16 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
           ) : (
             <View className="flex-row gap-4">
               <TouchableOpacity 
-                className="flex-1 py-[6px]  rounded-full border-[1px] border-[#F97316]"
+                className="flex-1 py-[6px] rounded-full border-[1px] border-[#F97316]"
+                onPress={handleCancel}
               >
                 <Text className="text-center text-[#F97316] font-sofia-medium">
                   Annuler
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                className="flex-1 py-[6px]  rounded-full bg-[#F97316]"
+                className="flex-1 py-[6px] rounded-full bg-[#F97316]"
+                onPress={() => setShowTrackingModal(true)}
               >
                 <Text className="text-center text-white font-sofia-medium">
                   Suivie de commande
@@ -189,6 +415,20 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
           )}
         </View>
       )}
+
+      {/* Modal d'erreur */}
+      <ErrorModal
+        visible={showErrorModal}
+        message="Pour annuler votre commande en cours, veuillez contacter notre service client."
+        onClose={() => setShowErrorModal(false)}
+      />
+
+      {/* Modal de tracking */}
+      <TrackingModal
+        visible={showTrackingModal}
+        order={order}
+        onClose={() => setShowTrackingModal(false)}
+      />
     </View>
   );
 };
@@ -262,12 +502,15 @@ const Orders = () => {
   // Récupérer l'ID de l'utilisateur connecté
   useEffect(() => {
     const getUserId = async () => {
-      const userData = await AuthStorage.getUserData();
-      if (userData?.id) {
-        setCurrentUserId(userData.id);
-       
-      } else {
-       
+      try {
+        const userData = await AuthStorage.getUserData();
+        if (userData?.id) {
+          setCurrentUserId(userData.id);
+        } else {
+          console.error("Pas d'ID utilisateur trouvé");
+        }
+      } catch (error) {
+        console.error("Erreur lors de la récupération des données utilisateur:", error);
       }
     };
     getUserId();
@@ -275,19 +518,19 @@ const Orders = () => {
 
   // Charger les commandes au montage du composant
   useEffect(() => {
-    fetchOrders().then(() => {
-    
-      if (orders && orders.length > 0) {
-       
-        if (orders[0].order_items && orders[0].order_items.length > 0) {
-        
-          
-          if (orders[0].order_items[0].dish) {
-            
-          }
+    const loadOrders = async () => {
+      try {
+        const token = await AuthStorage.getAccessToken();
+        if (!token) {
+          console.error("Pas de token d'accès trouvé");
+          return;
         }
+        await fetchOrders();
+      } catch (error) {
+        console.error("Erreur lors du chargement des commandes:", error);
       }
-    });
+    };
+    loadOrders();
   }, []);
 
   // Filtrer les commandes selon le filtre actif et l'ID de l'utilisateur
@@ -298,29 +541,19 @@ const Orders = () => {
     let userOrders = orders;
     if (currentUserId) {
       userOrders = orders.filter(order => {
-      
         const orderUserId = order.customer?.id || order.customer_id;
-        const matches = orderUserId === currentUserId;
-        if (!matches) {
-         
-        }
-        return matches;
+        return orderUserId === currentUserId;
       });
-      
-    } else {
-      
     }
 
     // Ensuite filtrer par statut selon le filtre actif
     switch (activeFilter) {
       case "en_cours":
-        return userOrders.filter(order => 
-          [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus)
-        );
+        return getActiveOrders(userOrders);
       case "termines":
-        return userOrders.filter(order => order.status === OrderStatus.DELIVERED);
+        return getCompletedOrders(userOrders);
       case "annuler":
-        return userOrders.filter(order => order.status === OrderStatus.CANCELLED);
+        return getCancelledOrders(userOrders);
       default:
         return userOrders;
     }

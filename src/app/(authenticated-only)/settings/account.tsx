@@ -10,7 +10,7 @@ import { getCustomerDetails } from "@/services/api/customer";
 import { useAuth } from "@/app/context/AuthContext";
 import ErrorModal from "@/components/ui/ErrorModal";
 import { format } from "date-fns";
-import { api } from "@/services/api/api"; 
+import { api, setAuthToken } from "@/services/api/api"; 
 import { formatImageUrl } from '@/utils/imageHelpers';
 
 const { width } = Dimensions.get('window');
@@ -469,7 +469,6 @@ const AccountSettings = () => {
       
       // Ajout de la date de naissance si disponible
       if (birthDate) {
-        // Utiliser le format dd/MM/yyyy comme dans create-account
         formData.append('birth_day', format(birthDate, 'dd/MM/yyyy'));
       }
       
@@ -478,21 +477,16 @@ const AccountSettings = () => {
         formData.append('email', email.trim());
       }
       
-      // NE PAS ajouter le champ 'phone' car l'API le connaît déjà
-      // et sa validation est très stricte
-      
-      // Ajout de l'image si disponible et si c'est une nouvelle image (commence par 'file:')
+      // Ajout de l'image si disponible et si c'est une nouvelle image
       let hasNewImage = false;
       if (profileImage && profileImage.startsWith('file:')) {
         hasNewImage = true;
-        // Extraction du nom et du type de l'image
         const uriParts = profileImage.split('/');
         const fileName = uriParts[uriParts.length - 1];
         const fileType = fileName.split('.').pop()?.toLowerCase() === 'png' 
           ? 'image/png' 
           : 'image/jpeg';
         
-        // Ajouter l'image au FormData de la même façon que dans create-account
         formData.append('image', {
           uri: profileImage,
           name: fileName,
@@ -513,34 +507,28 @@ const AccountSettings = () => {
         setUpdating(false);
         return;
       }
+
+      // S'assurer que le token est bien configuré pour la requête
+      setAuthToken(accessToken);
       
-   
       const response = await api.patch('/v1/customer', formData, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
           'Content-Type': 'multipart/form-data',
         },
-        timeout: 30000, // 30 secondes
+        timeout: 30000,
       });
-       
       
       // Déterminer l'URL de l'image à utiliser
       let imageUrl = null;
       
-      // 1. Utiliser l'image de la réponse API si disponible
       if (response.data && response.data.image) {
-        imageUrl = formatImageUrl(response.data.image); 
-      } 
-      // 2. Sinon, si une nouvelle image a été sélectionnée, l'utiliser
-      else if (hasNewImage && profileImage) {
-        imageUrl = profileImage; // Les images locales n'ont pas besoin d'être formatées
-        
-      } 
-      // 3. Sinon, conserver l'image existante
-      else if (user?.image) {
+        imageUrl = formatImageUrl(response.data.image);
+      } else if (hasNewImage && profileImage) {
+        imageUrl = profileImage;
+      } else if (user?.image) {
         imageUrl = formatImageUrl(user.image);
-     
       }
       
       // Mise à jour des données utilisateur dans le contexte
@@ -554,15 +542,16 @@ const AccountSettings = () => {
         image: imageUrl,
       };
       
-      updateUserData(updatedUserData, false);
+      // Mettre à jour le contexte avec les nouvelles données
+      updateUserData(updatedUserData, true);
       
       setSuccessMessage("Profil mis à jour avec succès !");
       
-      
+      // Recharger les données fraîches depuis l'API
       try {
         const freshUserData = await getCustomerDetails();
         if (freshUserData) {
-          updateUserData(freshUserData, false);
+          updateUserData(freshUserData, true);
           console.log('Données utilisateur rechargées depuis l\'API');
         }
       } catch (refreshError) {
@@ -570,11 +559,12 @@ const AccountSettings = () => {
       }
     } catch (e: any) {
       console.error('Erreur lors de la mise à jour du profil:', e);
-      // Afficher plus de détails sur l'erreur
       if (e.response) {
-    
+        const errorMessage = e.response.data?.message || e.message || "Erreur lors de la mise à jour du profil";
+        setErrorMessage(errorMessage);
+      } else {
+        setErrorMessage(e.message || "Erreur lors de la mise à jour du profil");
       }
-      setErrorMessage(e.message || "Erreur lors de la mise à jour du profil");
       setShowErrorModal(true);
     } finally {
       setUpdating(false);

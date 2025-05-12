@@ -6,7 +6,6 @@ import { User } from '@/app/context/AuthContext';
  */
 export interface AuthData {
   accessToken: string;
-  refreshToken: string;
   phone?: string;
 }
 
@@ -18,13 +17,11 @@ export const AuthStorage = {
   /**
    * Stocke les tokens d'authentification
    * @param accessToken Token d'accès
-   * @param refreshToken Token de rafraîchissement
    * @param phone Numéro de téléphone (optionnel)
    */
-  async storeTokens(accessToken: string, refreshToken: string, phone?: string): Promise<void> {
+  async storeTokens(accessToken: string, phone?: string): Promise<void> {
     try {
       await storeData(STORAGE_KEYS.AUTH.ACCESS_TOKEN, accessToken);
-      await storeData(STORAGE_KEYS.AUTH.REFRESH_TOKEN, refreshToken);
       if (phone) {
         await storeData(STORAGE_KEYS.AUTH.USER_PHONE, phone);
       }
@@ -68,16 +65,14 @@ export const AuthStorage = {
   async getAuthData(): Promise<AuthData | null> {
     try {
       const accessToken = await getData(STORAGE_KEYS.AUTH.ACCESS_TOKEN);
-      const refreshToken = await getData(STORAGE_KEYS.AUTH.REFRESH_TOKEN);
       const phone = await getData(STORAGE_KEYS.AUTH.USER_PHONE);
 
-      if (!accessToken || !refreshToken) {
+      if (!accessToken) {
         return null;
       }
 
       return {
         accessToken,
-        refreshToken,
         phone: phone || undefined
       };
     } catch (error) {
@@ -106,10 +101,9 @@ export const AuthStorage = {
   async clearAuthData(): Promise<void> {
     try {
       await removeData(STORAGE_KEYS.AUTH.ACCESS_TOKEN);
-      await removeData(STORAGE_KEYS.AUTH.REFRESH_TOKEN);
       await removeData(STORAGE_KEYS.AUTH.USER_PHONE);
       await removeData(STORAGE_KEYS.USER.PROFILE);
-      console.log('Auth data cleared successfully');
+      console.log('Donnée auth supprimées avec succès');
     } catch (error) {
       console.error('Error clearing auth data:', error);
       throw new Error('Failed to clear authentication data');

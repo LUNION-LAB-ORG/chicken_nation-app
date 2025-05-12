@@ -1,11 +1,15 @@
 {
   "expo": {
-    "scheme": "acme",
+    "scheme": "unionlab",
     "userInterfaceStyle": "automatic",
     "orientation": "default",
     "web": {
       "output": "static"
     },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/*"
+    ],
     "plugins": [
       "expo-router",
       [
@@ -27,7 +31,15 @@
           ]
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "splash": {
       "image": "./src/assets/icons/logo.png",
@@ -47,7 +59,9 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
       ],
       "config": {
         "googleMaps": {

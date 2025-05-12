@@ -9,6 +9,7 @@ import {
   Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import * as Location from "expo-location";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import useCartStore from "@/store/cartStore";
 import { FontAwesome } from "@expo/vector-icons";
@@ -19,14 +20,11 @@ import { useAuth } from "@/app/context/AuthContext";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import useLocationStore from "@/store/locationStore";
 import { promoCodes } from "@/data/MockedData";
-import SuccessModal from "@/components/ui/SuccessModal";
-import AddressSelectionModal from "@/components/address/AddressSelectionModal";
+import SuccessModal from "@/components/ui/SuccessModal";  
+import AddressSelectionModal from "@/components/address/AddressSelectionModal"; 
+import useOrderTypeStore, { OrderType } from '@/store/orderTypeStore';
 
-/**
- * Écran du panier d'achat
- * Affiche les produits ajoutés au panier, permet de modifier les quantités,
- * d'appliquer des codes promo et de passer à la caisse.
- */
+ 
 const Cart: React.FC = () => {
   // Hooks et stores
   const { items, totalItems, totalAmount, removeFromCart, updateQuantity } =
@@ -34,6 +32,7 @@ const Cart: React.FC = () => {
   const router = useRouter();
   const { user } = useAuth();
   const { addressDetails, coordinates, getFormattedAddress, setCoordinates, setAddressDetails, setLocationType } = useLocationStore();
+  const { activeType } = useOrderTypeStore();
 
   // États pour la gestion des codes promo
   const [promoCode, setPromoCode] = useState("");
@@ -77,9 +76,6 @@ const Cart: React.FC = () => {
   const getCurrentLocation = async (): Promise<void> => {
     try {
       setIsLoadingLocation(true);
-      
-      // Vérifier si le module expo-location est disponible
-      const Location = require("expo-location");
       
       // Demander la permission d'accéder à la localisation
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -268,6 +264,11 @@ const Cart: React.FC = () => {
     setShowSuccessModal(false);
   };
 
+  const handleAddressSelected = () => {
+    setShowAddressModal(false);
+    // Recharger les données du panier si nécessaire
+  };
+
   // Rendu pour un panier vide
   if (items.length === 0) {
     return (
@@ -389,7 +390,7 @@ const Cart: React.FC = () => {
         ))}
 
         {/* Section lieu de livraison */}
-        {user && (
+        {user && activeType === OrderType.DELIVERY && (
           <View className="bg-white rounded-3xl p-4 mb-4 border border-orange-500/50">
             <Text className="font-sofia-bold text-gray-500 mb-2">
               Lieu de livraison
@@ -566,9 +567,7 @@ const Cart: React.FC = () => {
       <AddressSelectionModal
         visible={showAddressModal}
         onClose={() => setShowAddressModal(false)}
-        onAddressSelected={() => {
-          // Rafraîchir les données de localisation après la sélection
-        }}
+        onAddressSelected={handleAddressSelected}
       />
 
       {/* Modale de succès pour le code promo */}

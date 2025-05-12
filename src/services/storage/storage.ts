@@ -30,15 +30,14 @@ export const STORAGE_KEYS = {
   },
 };
 
- 
 export const storeData = async (key: string, value: any): Promise<void> => {
   try {
     const jsonValue = JSON.stringify(value);
     await AsyncStorage.setItem(key, jsonValue);
-  
+    
   } catch (error) {
-    console.error('Error storing data:', error);
-     
+    
+    throw new Error(`Failed to store data for key: ${key}`);
   }
 };
 
@@ -50,9 +49,10 @@ export const storeData = async (key: string, value: any): Promise<void> => {
 export const getData = async (key: string): Promise<any> => {
   try {
     const jsonValue = await AsyncStorage.getItem(key);
+   
     return jsonValue != null ? JSON.parse(jsonValue) : null;
   } catch (error) {
-    console.error(`Error retrieving data for key: ${key}`, error);
+ 
     return null;
   }
 };
@@ -78,9 +78,9 @@ export const removeData = async (key: string): Promise<void> => {
 export const clearAll = async (): Promise<void> => {
   try {
     await AsyncStorage.clear();
-    console.log('Storage cleared successfully');
+   
   } catch (error) {
-    console.error('Error clearing storage:', error);
+    
     throw new Error('Failed to clear storage');
   }
 };

@@ -1,20 +1,26 @@
-import React, { useState, useEffect } from "react";
+import 'react-native-get-random-values';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
-  FlatList,
-  Modal,
   ActivityIndicator,
+  Dimensions,
+  Modal,
   StyleSheet,
+  Keyboard,
   Image,
-} from "react-native";
-import { MapPin, X, Edit2, Check } from "lucide-react-native";
-import { getUserAddresses, Address } from "@/services/api/address";
-import useLocationStore from "@/store/locationStore";
-import GradientButton from "@/components/ui/GradientButton";
-import { useRouter } from "expo-router";
-import ErrorModal from "@/components/ui/ErrorModal";
+  Platform,
+  KeyboardAvoidingView
+} from 'react-native';
+import { X, MapPin, Search } from "lucide-react-native";
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import MapView, { PROVIDER_GOOGLE, Marker, Region } from 'react-native-maps';
+import useLocationStore from '@/store/locationStore';
+import * as Location from 'expo-location';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface AddressSelectionModalProps {
   visible: boolean;
@@ -22,234 +28,580 @@ interface AddressSelectionModalProps {
   onAddressSelected: () => void;
 }
 
-/**
- * Modal permettant à l'utilisateur de sélectionner une adresse parmi celles enregistrées
- */
-const AddressSelectionModal: React.FC<AddressSelectionModalProps> = ({
-  visible,
-  onClose,
-  onAddressSelected,
+const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({ 
+  visible, 
+  onClose, 
+  onAddressSelected 
 }) => {
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [errorModalVisible, setErrorModalVisible] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const { setCoordinates, setAddressDetails, setLocationType, setSelectedAddressId } = useLocationStore();
-  const router = useRouter();
+  // Refs
+  const mapRef = useRef<MapView>(null);
+  const googlePlacesRef = useRef(null);
+  
+  // States
+  const [selectedLocation, setSelectedLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isMovingMarker, setIsMovingMarker] = useState<boolean>(false);
+  const [addressText, setAddressText] = useState<string>("");
+  const [addressTitle, setAddressTitle] = useState<string>("");
+  const [mapReady, setMapReady] = useState<boolean>(false);
+  const [searchFocused, setSearchFocused] = useState<boolean>(false);
 
-  /**
-   * Charge les adresses de l'utilisateur depuis le backend
-   */
-  const loadAddresses = async () => {
-    setIsLoading(true);
+  // Store
+  const { setCoordinates, setAddressDetails, setLocationType } = useLocationStore();
+
+  // Effects
+  useEffect(() => {
+    if (visible) {
+      getCurrentLocation();
+      setIsMovingMarker(false);
+      setSearchFocused(false);
+    }
+    
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setSearchFocused(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setTimeout(() => {
+          setSearchFocused(false);
+        }, 100);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [visible]);
+
+  // Get current location
+  const getCurrentLocation = async () => {
     try {
-      const userAddresses = await getUserAddresses();
-      setAddresses(userAddresses);
+      setIsLoading(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        console.log('Permission refusée');
+        setIsLoading(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced
+      });
+      
+      const currentLocation = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+
+      setSelectedLocation(currentLocation);
+      
+      if (mapRef.current && mapReady) {
+        mapRef.current.animateToRegion({
+          ...currentLocation,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 1000);
+      }
+
+      // Reverse geocode to get address details
+      await reverseGeocode(currentLocation);
     } catch (error) {
-      console.error("Erreur lors du chargement des adresses:", error);
-      setErrorMessage("Impossible de charger vos adresses. Veuillez réessayer.");
-      setErrorModalVisible(true);
+      console.error('Erreur lors de la récupération de la position:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Chargement des adresses quand le modal s'ouvre
-  useEffect(() => {
-    if (visible) {
-      loadAddresses();
-    }
-  }, [visible]);
-
-  /**
-   * Sélectionne une adresse et la définit comme adresse active
-   */
-  const handleSelectAddress = async (address: Address) => {
+  // Reverse geocode
+  const reverseGeocode = async (location: { latitude: number; longitude: number }) => {
     try {
-      // Mettre à jour le store de localisation
-      setCoordinates({
-        latitude: address.latitude,
-        longitude: address.longitude
-      });
-
-      setAddressDetails({
-        formattedAddress: address.address,
-        title: address.title,
-        city: address.city,
-        address: address.street || address.address,
-        addressId: address.id.toString()
-      });
+      const [address] = await Location.reverseGeocodeAsync(location);
       
-      // Enregistrer l'ID de l'adresse sélectionnée
-      setSelectedAddressId(address.id.toString());
-
-      setLocationType("manual");
-
-      // Fermer le modal et notifier le parent
-      onAddressSelected();
-      onClose();
+      if (address) {
+        const formattedAddress = [
+          address.name,
+          address.street,
+          address.district,
+          address.city,
+          address.region,
+          address.country
+        ].filter(Boolean).join(', ');
+        
+        setAddressText(formattedAddress);
+        
+        // Suggérer un titre basé sur l'adresse
+        if (!addressTitle) {
+          if (address.name) {
+            setAddressTitle(address.name);
+          } else if (address.street) {
+            setAddressTitle(address.street.split(' ')[0]);
+          }
+        }
+      }
     } catch (error) {
-      console.error("Erreur lors de la sélection de l'adresse:", error);
-      setErrorMessage("Impossible de sélectionner cette adresse. Veuillez réessayer.");
-      setErrorModalVisible(true);
+      console.error('Erreur lors du géocodage inverse:', error);
     }
   };
 
-  /**
-   * Redirige vers l'écran d'édition d'adresse
-   */
-  const handleEditAddress = (address: Address) => {
-    if (!address.id) return;
+  // Handle map press for marker movement
+  const handleMapPress = (event: any) => {
+    if (!isMovingMarker) return;
     
-    onClose();
-    router.push({
-      pathname: "/location/edit-address",
-      params: { id: address.id.toString() }
-    });
+    const { coordinate } = event.nativeEvent;
+    setSelectedLocation(coordinate);
+    reverseGeocode(coordinate);
   };
 
-  /**
-   * Ajoute une nouvelle adresse
-   */
-  const handleAddAddress = () => {
-    onClose();
-    router.push("/location/manualset");
+  // Toggle marker movement mode
+  const toggleMarkerMovement = () => {
+    setIsMovingMarker(!isMovingMarker);
   };
 
-  /**
-   * Rendu d'un élément de la liste des adresses
-   */
-  const renderAddressItem = ({ item }: { item: Address }) => (
-    <View className="bg-white rounded-xl p-4 mb-3" style={styles.addressCard}>
-      <View className="flex-row items-center">
-        <View className="bg-primary-50 p-2 rounded-full mr-3">
-        <Image source={require("../../assets/icons/changelocation.png")}
-         className="w-12 h-12"
-         style={{ resizeMode: "contain" }} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-gray-900 font-sofia-medium text-base">{item.title}</Text>
-          <Text className="text-gray-500 font-sofia-regular text-sm" numberOfLines={2}>
-            {item.address}
-          </Text>
-        </View>
-      </View>
-      
-      <View className="flex-row mt-3 pt-3 border-t border-gray-100 justify-between items-center">
-        <TouchableOpacity 
-          className="flex-row items-center px-3 py-2" 
-          onPress={() => handleEditAddress(item)}
-        >
-          <Edit2 size={16} color="#666" />
-          <Text className="text-gray-600 font-sofia-regular ml-1">Modifier</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.selectButton}
-          onPress={() => handleSelectAddress(item)}
-        >
-          <Check size={18} color="#FFFFFF" style={{ marginRight: 4 }} />
-          <Text className="text-white font-sofia-bold">Choisir</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  // Handle location select from search
+  const handleLocationSelect = (data: any, details: any) => {
+    if (!details || !details.geometry) return;
+    
+    const location = {
+      latitude: details.geometry.location.lat,
+      longitude: details.geometry.location.lng,
+    };
+
+    setSelectedLocation(location);
+    setSearchFocused(false);
+    
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        ...location,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      }, 1000);
+    }
+
+    // Extract address components
+    const addressComponents = details.address_components;
+    const streetNumber = addressComponents?.find((component: any) => 
+      component.types.includes('street_number'))?.long_name || '';
+    const route = addressComponents?.find((component: any) => 
+      component.types.includes('route'))?.long_name || '';
+    const city = addressComponents?.find((component: any) => 
+      component.types.includes('locality'))?.long_name || '';
+    
+    const formattedAddress = details.formatted_address;
+    setAddressText(formattedAddress);
+
+    // Suggérer un titre basé sur le nom du lieu ou l'adresse
+    if (details.name && details.name !== formattedAddress) {
+      setAddressTitle(details.name);
+    } else if (route) {
+      setAddressTitle(route);
+    }
+  };
+
+  // Handle confirm location
+  const handleConfirmLocation = () => {
+    if (!selectedLocation) return;
+
+    // Construction de l'objet adresse complet pour le backend
+    const addressObj = {
+      title: addressTitle || "Adresse sélectionnée",
+      address: addressText,
+      street: addressText.split(',')[0] || '',
+      city: '', // Peut être amélioré si tu as la ville dans l'adresseText ou ailleurs
+      longitude: selectedLocation.longitude,
+      latitude: selectedLocation.latitude,
+      note: '',
+      formattedAddress: addressText,
+      addressId: "selected"
+    };
+
+    setCoordinates(selectedLocation);
+    setLocationType("manual");
+    setAddressDetails(addressObj as any);
+    onAddressSelected();
+    onClose();
+  };
+
+  // Center map on marker
+  const centerMapOnMarker = () => {
+    if (!selectedLocation || !mapRef.current) return;
+    
+    mapRef.current.animateToRegion({
+      ...selectedLocation,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    }, 300);
+  };
 
   return (
-    <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={onClose}
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-3xl h-4/5">
-            {/* Header du modal */}
-            <View className="flex-row justify-between items-center p-4 border-b border-gray-100">
-              <Text className="text-lg font-sofia-bold text-gray-800">Choisir une adresse</Text>
-              <TouchableOpacity onPress={onClose} className="p-2">
-                <X size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Contenu du modal */}
-            <View className="flex-1 px-4 pt-4">
-              {isLoading ? (
-                <View className="flex-1 justify-center items-center">
-                  <ActivityIndicator size="large" color="#FF6B00" />
-                </View>
-              ) : addresses.length === 0 ? (
-                <View className="flex-1 justify-center items-center">
-                  <Image
-                    source={require("../../assets/icons/changelocation.png")}
-                    className="w-16 h-16 sm:w-20 sm:h-20"
-                    style={{ resizeMode: "contain" }}
-                  />
-                  <Text className="text-gray-500 font-sofia-medium text-base mt-4 mb-8 text-center px-4">
-                    Vous n'avez pas encore d'adresses enregistrées
-                  </Text>
-                  <GradientButton
-                    onPress={handleAddAddress}
-                  >
-                    <Text className="text-white text-lg font-urbanist-medium">Ajouter une adresse</Text>
-                  </GradientButton>
-                </View>
-              ) : (
-                <>
-                  <FlatList
-                    data={addresses}
-                    renderItem={renderAddressItem}
-                    keyExtractor={(item) => `address-${item.id}`}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                  />
-                  
-                  <View className="absolute bottom-8 right-4 left-4">
-                    <GradientButton
-                      onPress={handleAddAddress}
-                    >
-                      <Text className="text-white text-lg font-urbanist-medium">Ajouter une adresse</Text>
-                    </GradientButton>
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onClose} style={styles.backButton}>
+            <X size={24} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Sélectionner une adresse</Text>
+          <View style={styles.headerRight} />
         </View>
-      </Modal>
 
-      {/* Modal d'erreur */}
-      <ErrorModal 
-        visible={errorModalVisible}
-        message={errorMessage}
-        onClose={() => setErrorModalVisible(false)}
-      />
-    </>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <GooglePlacesAutocomplete
+            ref={googlePlacesRef}
+            placeholder="Rechercher une adresse..."
+            onPress={handleLocationSelect}
+            textInputProps={{
+              onFocus: () => setSearchFocused(true),
+              onBlur: () => setSearchFocused(false),
+            }}
+            query={{
+              key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
+              language: 'fr',
+              components: 'country:ci',
+            }}
+            styles={{
+              container: styles.placesContainer,
+              textInputContainer: styles.placesInputContainer,
+              textInput: styles.placesInput,
+              listView: styles.placesList,
+              row: styles.placesRow,
+              description: styles.placesDescription,
+              separator: styles.placesSeparator,
+              poweredContainer: { display: 'none' },
+            }}
+            enablePoweredByContainer={false}
+            fetchDetails={true}
+            onFail={error => console.error(error)}
+            renderLeftButton={() => (
+              <View style={styles.searchIconContainer}>
+                <Search size={18} color="#666" />
+              </View>
+            )}
+            renderRow={(data) => (
+              <View style={styles.searchResultRow}>
+                <View style={styles.searchResultIcon}>
+                  <MapPin size={16} color="#666" />
+                </View>
+                <View style={styles.searchResultTextContainer}>
+                  <Text style={styles.searchResultMainText}>
+                    {data.structured_formatting?.main_text || data.description}
+                  </Text>
+                  <Text style={styles.searchResultSecondaryText}>
+                    {data.structured_formatting?.secondary_text || ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+            listViewDisplayed={searchFocused}
+            keyboardShouldPersistTaps="handled"
+          />
+        </View>
+
+        {/* Map */}
+        <View style={styles.mapContainer}>
+          {selectedLocation && (
+            <MapView
+              ref={mapRef}
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              onMapReady={() => setMapReady(true)}
+              initialRegion={{
+                ...selectedLocation,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+              }}
+              onPress={handleMapPress}
+            >
+              <Marker coordinate={selectedLocation}>
+                <Image
+                  source={require("../../assets/icons/changelocation.png")}
+                  style={{ width: 34, height: 32, resizeMode: "contain" }}
+                />
+              </Marker>
+            </MapView>
+          )}
+
+          {/* Move marker button */}
+          <TouchableOpacity
+            style={[
+              styles.moveButton,
+              isMovingMarker && styles.moveButtonActive
+            ]}
+            onPress={toggleMarkerMovement}
+          >
+            <Text style={styles.moveButtonText}>
+              {isMovingMarker ? "Terminer" : "Déplacer le marqueur"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Center marker button */}
+          <TouchableOpacity
+            style={styles.centerButton}
+            onPress={centerMapOnMarker}
+          >
+            <MapPin size={20} color="#FF6B00" />
+          </TouchableOpacity>
+
+          {/* Help banner */}
+          {isMovingMarker && (
+            <View style={styles.helpBanner}>
+              <Text style={styles.helpText}>
+                Appuyez sur la carte pour déplacer le marqueur
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Form */}
+        <View style={styles.formContainer}>
+       
+          <Text style={styles.addressText} numberOfLines={2}>
+            {addressText || "Sélectionnez un emplacement sur la carte"}
+          </Text>
+          
+          <TouchableOpacity
+            style={styles.confirmButton}
+            onPress={handleConfirmLocation}
+            disabled={!selectedLocation}
+          >
+            <Text style={styles.confirmButtonText}>
+              Confirmer cette adresse
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Loading Indicator */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#F17922" />
+          </View>
+        )}
+      </KeyboardAvoidingView>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  addressCard: {
+  container: {
+    flex: 1,
+    backgroundColor: 'white',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  headerRight: {
+    width: 40,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    zIndex: 10,
+  },
+  placesContainer: {
+    flex: 0,
+  },
+  placesInputContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  placesInput: {
+    height: 44,
+    backgroundColor: 'transparent',
+    fontSize: 16,
+    color: '#1F2937',
+    padding: 0,
+    marginLeft: 8,
+  },
+  placesList: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    maxHeight: 200,
+  },
+  placesRow: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  placesDescription: {
+    fontSize: 14,
+    color: '#1F2937',
+    fontWeight: '400',
+  },
+  placesSeparator: {
+    height: 0,
+  },
+  searchIconContainer: {
+    padding: 8,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  searchResultIcon: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  searchResultTextContainer: {
+    flex: 1,
+  },
+  searchResultMainText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#000',
+  },
+  searchResultSecondaryText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  moveButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    backgroundColor: '#FF6B00',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  selectButton: {
-    backgroundColor: "#FF6B00",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#FF6B00",
+  moveButtonActive: {
+    backgroundColor: '#333',
+  },
+  moveButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  centerButton: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    backgroundColor: 'white',
+    padding: 10,
+    borderRadius: 30,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
-  }
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  helpBanner: {
+    position: 'absolute',
+    top: 16,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  helpText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  formContainer: {
+    padding: 16,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#4B5563',
+    marginBottom: 8,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  addressText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  confirmButton: {
+    backgroundColor: '#FF6B00',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: '#FF6B00',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  confirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
 
-export default AddressSelectionModal;
+export default AddressSelectionModalFinal;

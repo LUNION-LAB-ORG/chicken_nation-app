@@ -21,6 +21,9 @@ import TableReservation from "@/components/reservation/TableReservation";
 import { useAuth } from "@/app/context/AuthContext";
 import { getCustomerDetails } from "@/services/api/customer";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import RestaurantSelector from '@/components/checkout/RestaurantSelector';
+import useOrderStore from '@/store/orderStore';
+import { getRestaurantById } from '@/services/restaurantService';
 
 const Reserver = () => {
   const router = useRouter();
@@ -43,6 +46,10 @@ const Reserver = () => {
 
   // Utiliser le nouveau store centralisé
   const { setActiveType, setReservationData } = useOrderTypeStore();
+
+  const { selectedRestaurantId } = useOrderStore();
+  const [showRestaurantSelector, setShowRestaurantSelector] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null);
 
   // Récupérer les données de l'utilisateur et remplir les champs automatiquement
   useEffect(() => {
@@ -98,6 +105,14 @@ const Reserver = () => {
     loadUserData();
   }, [user]);
 
+  useEffect(() => {
+    if (selectedRestaurantId) {
+      getRestaurantById(selectedRestaurantId).then(setSelectedRestaurant);
+    } else {
+      setSelectedRestaurant(null);
+    }
+  }, [selectedRestaurantId]);
+
   const handleGuestChange = (increment) => {
     setNumberOfGuests((prev) => Math.max(1, prev + increment));
   };
@@ -106,9 +121,14 @@ const Reserver = () => {
     setTableType(type);
   };
 
- 
   const handleNext = () => {
     if (currentStep === 1) {
+      // Vérifier si un restaurant est sélectionné
+      if (!selectedRestaurant) {
+        alert("Veuillez sélectionner un restaurant pour votre réservation.");
+        return;
+      }
+
       // Activer le type de commande TABLE dans le store centralisé
       setActiveType(OrderType.TABLE);
       setCurrentStep(2);
@@ -119,16 +139,35 @@ const Reserver = () => {
       newDate.setMinutes(parseInt(selectedMinute));
       setDate(newDate);
 
+      // Construction de l'objet adresse au même format que AddressSelectionModal
+      const addressObj = {
+        title: selectedRestaurant.name,
+        address: selectedRestaurant.address,
+        street: selectedRestaurant.address.split(',')[0] || '',
+        city: selectedRestaurant.address.split(',')[1]?.trim() || '',
+        longitude: selectedRestaurant.longitude || 0,
+        latitude: selectedRestaurant.latitude || 0,
+        note: '',
+        formattedAddress: selectedRestaurant.address,
+        addressId: "restaurant"
+      };
+
       // Mettre à jour les données de réservation dans le store centralisé
       const reservationData = {
         date: newDate,
         time: `${selectedHour}:${selectedMinute}`,
         numberOfPeople: numberOfGuests,
-        tableType, // Utiliser le type de table au format de la base de données
+        tableType,
+        restaurant: {
+          id: selectedRestaurant.id,
+          name: selectedRestaurant.name,
+          address: selectedRestaurant.address
+        },
+        // Utiliser le même format d'adresse que AddressSelectionModal
+        address: addressObj
       };
       
       setReservationData(reservationData);
-      
       
     } else {
       // Valider les champs obligatoires
@@ -201,6 +240,52 @@ const Reserver = () => {
           onMinuteChange={setSelectedMinute}
         />
       </View>
+
+      {/* Sélection du restaurant */}
+      <View className="mt-6">
+        <View className="flex flex-row gap-4 mb-4">
+          <Image
+            source={require("../../../assets/icons/chicken.png")}
+            style={{ width: 18, height: 18, resizeMode: "contain" }}
+          />
+          <Text className="text-md font-sofia-bold text-orange-500">
+            Restaurant
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#F3F4F6',
+            borderRadius: 12,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: selectedRestaurant ? '#FF6B00' : '#E5E7EB',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+          onPress={() => setShowRestaurantSelector(true)}
+        >
+          <View>
+            <Text style={{ fontWeight: 'bold', color: '#222', fontSize: 16 }}>
+              {selectedRestaurant ? selectedRestaurant.name : 'Choisir un restaurant'}
+            </Text>
+            {selectedRestaurant && (
+              <Text style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
+                {selectedRestaurant.address}
+              </Text>
+            )}
+          </View>
+          <Text style={{ color: '#FF6B00', fontWeight: 'bold', fontSize: 15 }}>
+            {selectedRestaurant ? 'Changer' : 'Sélectionner'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <RestaurantSelector
+        visible={showRestaurantSelector}
+        onClose={() => setShowRestaurantSelector(false)}
+      />
+
       <View className="flex items-start flex-row gap-3 mt-6">
         <Image
           source={require("../../../assets/icons/chicken.png")}
@@ -332,7 +417,11 @@ const Reserver = () => {
             {currentStep === 1 ? "Annuler" : "Retour"}
           </Text>
         </TouchableOpacity>
-        <GradientButton onPress={handleNext} className="flex-1 ml-2">
+        <GradientButton 
+          onPress={handleNext} 
+          className="flex-1 ml-2"
+          disabled={currentStep === 1 && !selectedRestaurant}
+        >
           <Text style={{ color: "white" }}>
             {currentStep === 1 ? "Suivant" : "Suivant"}
           </Text>

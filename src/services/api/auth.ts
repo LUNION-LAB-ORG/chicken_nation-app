@@ -27,7 +27,6 @@ interface CustomerLoginResponse {
 
 export interface AuthResponse {
   token: string;
-  refreshToken: string;
   id: string;
   phone: string;
   email: string | null;
@@ -59,32 +58,18 @@ export const login = async (data: LoginDto): Promise<AuthResponse> => {
   }
 };
 
-// Variable pour stocker temporairement le dernier OTP reçu (pour le développement uniquement)
-export let lastGeneratedOTP: string | null = null;
-
 // Fonction pour la connexion client par téléphone (demande OTP)
 export const loginCustomer = async (phone: string): Promise<CustomerLoginResponse> => {
   try {
     // Formater le numéro de téléphone au format requis "+2250102030201"
     const formattedPhone = formatPhoneNumber(phone);
     
-    console.log('Sending login request with phone:', formattedPhone);
-    
     // Pour l'API, on envoie sans le +
     const apiPhone = formattedPhone.startsWith('+') ? formattedPhone.substring(1) : formattedPhone;
     
     const response = await api.post("/v1/auth/customer/login", { phone: apiPhone });
-    console.log('Login response:', response.data);
-    
-    // Stocker l'OTP s'il est disponible dans la réponse (pour le développement uniquement)
-    if (response.data && response.data.otp) {
-      lastGeneratedOTP = response.data.otp;
-      console.log('OTP stocké pour auto-remplissage:', lastGeneratedOTP);
-    }
-    
     return response.data;
   } catch (error: any) {
-    console.error('Login customer error:', error.response?.data || error.message);
     throw new Error(error?.response?.data?.message || "Erreur lors de la demande de connexion");
   }
 };
@@ -104,13 +89,9 @@ export const verifyOTP = async (data: OtpVerifyDto): Promise<AuthResponse> => {
       otp: data.otp
     };
     
-    console.log('Sending OTP verification with payload:', payload);
-    
     const response = await api.post("/v1/auth/customer/verify-otp", payload);
-    console.log('OTP verification response:', response.data);
     return response.data;
   } catch (error: any) {
-    console.error('OTP verification error:', error.response?.data || error.message);
     throw new Error(error?.response?.data?.message || "Code OTP invalide");
   }
 };
@@ -121,12 +102,8 @@ export const requestOTP = async (phone: string): Promise<void> => {
     // Nettoyer le numéro de téléphone (enlever le + si présent)
     const cleanedPhone = phone.startsWith('+') ? phone.substring(1) : phone;
     
-    console.log('Requesting new OTP for phone:', cleanedPhone);
-    
-    const response = await api.post("/v1/auth/customer/otp", { phone: cleanedPhone });
-    console.log('Request OTP response:', response.data);
+    await api.post("/v1/auth/customer/login", { phone: cleanedPhone });
   } catch (error: any) {
-    console.error('Request OTP error:', error.response?.data || error.message);
     throw new Error(error?.response?.data?.message || "Erreur lors de l'envoi du code OTP");
   }
 };
@@ -144,11 +121,7 @@ export const refreshToken = async (refresh_token: string): Promise<{ token: stri
   }
 };
 
-/**
- * Formate un numéro de téléphone au format requis "+2250102030201"
- * @param phone Numéro de téléphone à formater
- * @returns Numéro de téléphone formaté
- */
+ 
 export const formatPhoneNumber = (phone: string): string => {
   // Supprimer tous les caractères non numériques
   let cleaned = phone.replace(/\D/g, '');

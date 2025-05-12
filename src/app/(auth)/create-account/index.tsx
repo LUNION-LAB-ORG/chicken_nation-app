@@ -185,12 +185,9 @@ const CreateAccount = () => {
           : 'image/jpeg';
         
         // Ajouter l'image au FormData
-        formDataToSend.append('image', {
-          uri: formData.image,
-          name: fileName,
-          type: fileType,
-        } as any);
-        
+        formDataToSend.append('image', formData.image);  
+
+
         hasNewImage = true;
         hasData = true;
       }
@@ -270,21 +267,36 @@ const CreateAccount = () => {
       // 7. Finalisation du processus d'onboarding
       completeOnboarding();
       
-      // 8. Redirection vers l'application principale
-      router.replace('/(tabs-user)/');
+      // 8. Redirection vers l'écran de bienvenue puis vers l'application principale
+      router.replace('/onboarding/welcome');
     } catch (error: any) {
       console.error('Erreur lors de la mise à jour du profil:', error);
+      console.error('Détails de l\'erreur:', error.response);
       
-      // Afficher plus de détails sur l'erreur
+      // Gestion des erreurs avec des messages conviviaux
       if (error.response) {
-        console.error('Détails de l\'erreur:', {
-          status: error.response.status,
-          data: error.response.data,
-          headers: error.response.headers
-        });
+        switch (error.response.status) {
+          case 409:
+            setErrorMessage('Cette adresse email est déjà utilisée par un autre compte');
+            break;
+          case 400:
+            setErrorMessage('Les informations fournies ne sont pas valides');
+            break;
+          case 401:
+            setErrorMessage('Votre session a expiré, veuillez vous reconnecter');
+            break;
+          case 413:
+            setErrorMessage('L\'image est trop volumineuse, veuillez en choisir une plus légère');
+            break;
+          default:
+            setErrorMessage('Une erreur est survenue lors de la mise à jour de votre profil');
+        }
+      } else if (error.request) {
+        setErrorMessage('Impossible de contacter le serveur, veuillez vérifier votre connexion internet');
+      } else {
+        setErrorMessage('Une erreur inattendue est survenue');
       }
       
-      setErrorMessage(error.message || "Erreur lors de la mise à jour du profil");
       setShowErrorModal(true);
     } finally {
       setIsLoading(false);

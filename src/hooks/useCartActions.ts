@@ -242,14 +242,14 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
         await addToCart(item);
         
         // Afficher un message de succès
-        setSuccessMessage("Article mis à jour dans le panier");
+        setSuccessMessage("Menu mis à jour dans le panier");
       } else {
         // Ajouter un nouvel article
         console.log("[ProductId] Ajout d'un nouvel article au panier");
         await addToCart(item);
         
         // Afficher un message de succès
-        setSuccessMessage("Article ajouté au panier");
+        setSuccessMessage("Menu ajouté au panier");
       }
       
       // Afficher le modal de succès

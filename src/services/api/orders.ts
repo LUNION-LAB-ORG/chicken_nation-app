@@ -1,6 +1,7 @@
 import { api, setAuthToken } from './api';
 import { AuthStorage } from '@/services/storage/auth-storage';
 import { formatImageUrl } from '@/utils/imageHelpers';
+import { formatPhoneForAPI } from '@/utils/formatters';
 import { CacheService } from '@/services/storage/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -33,7 +34,7 @@ export interface OrderItem {
  */
 export interface CreateOrderDto {
   type: OrderType;
-  address_id: string;
+  address: any; // Objet d'adresse complet
   items: OrderItem[];
   phone: string;
   table_type?: string;
@@ -141,8 +142,8 @@ export const createOrder = async (orderData: CreateOrderDto): Promise<OrderRespo
     // Créer une copie des données pour éviter de modifier l'original
     const cleanedOrderData = { ...orderData };
     
-    // Si l'ID d'adresse est "current_location", récupérer l'adresse temporaire stockée
-    if (cleanedOrderData.address_id === "current_location") {
+    // Si l'adresse est temporaire (localisation actuelle), la traiter correctement
+    if (cleanedOrderData.address && cleanedOrderData.address.isTemporary) {
       try {
         const tempAddressJson = await AsyncStorage.getItem('temp_delivery_address');
         if (tempAddressJson) {
@@ -154,9 +155,8 @@ export const createOrder = async (orderData: CreateOrderDto): Promise<OrderRespo
             ? `${cleanedOrderData.note} - ${locationNote}` 
             : locationNote;
             
-          // Utiliser une adresse par défaut pour le backend
-          // Cela permet de contourner la validation côté serveur
-          cleanedOrderData.address_id = "00000000-0000-0000-0000-000000000000";
+          // Utiliser l'objet d'adresse complet
+          cleanedOrderData.address = tempAddress;
         }
       } catch (error) {
         console.error("Erreur lors de la récupération de l'adresse temporaire:", error);
@@ -201,24 +201,26 @@ export const createOrder = async (orderData: CreateOrderDto): Promise<OrderRespo
     }
 
     if ('phone' in cleanedOrderData && cleanedOrderData.phone) {
-      const userData = await AuthStorage.getUserData();
-      if (userData?.phone) {
-        // Supprimer les espaces et les tirets
-        let digits = userData.phone.replace(/\D/g, '');
-        
-        if (digits.startsWith('225')) {
-          digits = digits.substring(3);
-        }
-        
-        // Ajouter le 0 au début si nécessaire
-        if (!digits.startsWith('0')) {
-          digits = '0' + digits;
-        }
-        
-        cleanedOrderData.phone = `+225${digits}`;
+      console.log('=== TRAITEMENT DU NUMÉRO DANS LE SERVICE API ===');
+      console.log('NUMÉRO REÇU DANS LE SERVICE:', cleanedOrderData.phone);
+      
+      // Utiliser la fonction utilitaire pour assurer un formatage cohérent
+      const phoneBeforeFormatting = cleanedOrderData.phone;
+      cleanedOrderData.phone = formatPhoneForAPI(cleanedOrderData.phone);
+      
+      // Vérifier si le formatage a changé le numéro
+      if (phoneBeforeFormatting !== cleanedOrderData.phone) {
+        console.log('LE NUMÉRO A ÉTÉ MODIFIÉ PAR LE FORMATAGE');
+        console.log('AVANT:', phoneBeforeFormatting);
+        console.log('APRÈS:', cleanedOrderData.phone);
       } else {
-        // Pas de modification si le numéro de téléphone n'est pas disponible
+        console.log('LE NUMÉRO N\'A PAS ÉTÉ MODIFIÉ PAR LE FORMATAGE');
       }
+      
+      // Log pour débogage
+      console.log('NUMÉRO DE TÉLÉPHONE FINAL ENVOYÉ À L\'API:', cleanedOrderData.phone);
+      console.log('LONGUEUR DU NUMÉRO FINAL:', cleanedOrderData.phone.length);
+      console.log('=== FIN DU TRAITEMENT DU NUMÉRO ===');
     }
 
     // Envoyer la requête avec les données nettoyées
@@ -227,6 +229,8 @@ export const createOrder = async (orderData: CreateOrderDto): Promise<OrderRespo
         Authorization: `Bearer ${authData.accessToken}`
       }
     });
+
+    console.log('Réponse backend:', response.data);
 
     // Invalider le cache des commandes
     await orderCache.invalidate('customer_orders');
@@ -251,7 +255,7 @@ export const createOrder = async (orderData: CreateOrderDto): Promise<OrderRespo
  */
 export const createPickupOrder = async (orderData: {
   type: OrderType;
-  address_id: string;
+  address: any; // Objet d'adresse complet
   items: { dish_id: string; quantity: number }[];
   phone: string;
   date?: string;
@@ -296,14 +300,14 @@ export const createPickupOrder = async (orderData: {
  * Crée une commande de type PICKUP (à emporter) avec un format exactement identique à l'exemple du backend
  */
 export const createPickupOrderExact = async ({
-  address_id,
+  address,
   items,
   phone,
   date,
   time,
   note
 }: {
-  address_id: string;
+  address: any; // Objet d'adresse complet
   items: { dish_id: string; quantity: number }[];
   phone: string;
   date?: string;
@@ -320,10 +324,10 @@ export const createPickupOrderExact = async ({
     // S'assurer que le token est configuré dans les headers
     setAuthToken(authData.accessToken);
     
-    // Créer l'objet exactement comme l'exemple du backend
+    // Créer l'objet avec l'adresse complète
     const exactOrderData = {
       type: 'PICKUP',
-      address_id,
+      address,
       phone,
       items,
       ...(date && { date }),
@@ -359,21 +363,7 @@ export const createPickupOrderExact = async ({
 /**
  * Crée une commande de type PICKUP en utilisant exactement le même format que DELIVERY
  */
-export const createPickupOrderLikeDelivery = async ({
-  address_id,
-  fullname,
-  email,
-  items,
-  phone,
-  note
-}: {
-  address_id: string;
-  fullname: string;
-  email: string;
-  items: { dish_id: string; quantity: number }[];
-  phone: string;
-  note?: string;
-}): Promise<OrderResponse> => {
+export const createPickupOrderLikeDelivery = async (orderData: CreateOrderDto): Promise<OrderResponse> => {
   try {
     // Récupérer le token d'authentification
     const authData = await AuthStorage.getAuthData();
@@ -384,24 +374,8 @@ export const createPickupOrderLikeDelivery = async ({
     // S'assurer que le token est configuré dans les headers
     setAuthToken(authData.accessToken);
     
-    // Créer l'objet exactement comme l'exemple DELIVERY qui fonctionne
-    const exactOrderData = {
-      type: 'PICKUP',
-      address_id,
-      fullname,
-      email,
-      items,
-      note,
-      phone
-    };
-    
-    // Envoyer la requête avec le format exact
-    const response = await api.post('/v1/orders', exactOrderData, {
-      headers: {
-        Authorization: `Bearer ${authData.accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    // Envoyer la requête
+    const response = await api.post('/v1/orders', orderData);
     
     // Invalider le cache des commandes
     await orderCache.invalidate('customer_orders');
@@ -410,12 +384,8 @@ export const createPickupOrderLikeDelivery = async ({
   } catch (error: any) {
     // Gérer les erreurs
     if (error.response) {
-      // Afficher les erreurs de validation
-      if (error.response.config) {
-        // console.error('Erreur de validation:', error.response.config);
-      }
+      console.error('Erreur API:', error.response.data);
     }
-    
     throw new Error(error?.response?.data?.message || 'Erreur lors de la création de la commande');
   }
 };
@@ -424,7 +394,7 @@ export const createPickupOrderLikeDelivery = async ({
  * Crée une commande de type TABLE (réservation) en utilisant exactement le même format que DELIVERY
  */
 export const createTableOrderLikeDelivery = async ({
-  address_id,
+  address,
   fullname,
   email,
   items,
@@ -435,7 +405,7 @@ export const createTableOrderLikeDelivery = async ({
   places,
   note
 }: {
-  address_id: string;
+  address: any; // Objet d'adresse complet
   fullname: string;
   email: string;
   items: { dish_id: string; quantity: number }[];
@@ -456,10 +426,10 @@ export const createTableOrderLikeDelivery = async ({
     // S'assurer que le token est configuré dans les headers
     setAuthToken(authData.accessToken);
     
-    // Créer l'objet exactement comme l'exemple DELIVERY qui fonctionne
+    // Créer l'objet avec l'adresse complète
     const exactOrderData = {
       type: 'TABLE',
-      address_id,
+      address,
       fullname,
       email,
       items,
@@ -505,9 +475,15 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
   try {
     // Récupérer le token d'authentification
     const authData = await AuthStorage.getAuthData();
+    
+
     if (!authData?.accessToken) {
       throw new Error('Authentification requise pour récupérer les commandes');
     }
+
+    // Configurer le token pour toutes les requêtes
+    setAuthToken(authData.accessToken);
+    
 
     // Récupérer l'ID du client connecté si non fourni
     if (!customerId) {
@@ -525,13 +501,16 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
       return cachedOrders;
     }
 
-    // Construire l'URL avec le filtre customerId
-    const url = `/v1/orders?customer_id=${customerId}`;
+    // Utiliser le bon endpoint
+    const url = `v1/orders/customer`;
+ 
 
     // Envoyer la requête
     const response = await api.get(url, {
       headers: {
-        Authorization: `Bearer ${authData.accessToken}`
+        'Authorization': `Bearer ${authData.accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }
     });
 
@@ -621,16 +600,25 @@ export const cancelOrder = async (orderId: string): Promise<boolean> => {
   try {
     // Récupérer le token d'authentification
     const authData = await AuthStorage.getAuthData();
+    
+
     if (!authData?.accessToken) {
       throw new Error('Authentification requise pour annuler une commande');
     }
 
-    // Envoyer la requête
-    await api.patch(`/v1/orders/${orderId}/cancel`, {}, {
+    // Configurer le token pour toutes les requêtes
+    setAuthToken(authData.accessToken);
+
+    // Envoyer la requête DELETE
+    const response = await api.delete(`v1/orders/${orderId}`, {
       headers: {
-        Authorization: `Bearer ${authData.accessToken}`
+        'Authorization': `Bearer ${authData.accessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }
     });
+
+   
 
     // Invalider le cache
     await orderCache.invalidate(`order_${orderId}`);
@@ -638,6 +626,44 @@ export const cancelOrder = async (orderId: string): Promise<boolean> => {
 
     return true;
   } catch (error: any) {
+    console.error('[CANCEL ORDER] Erreur:', error.response?.data || error.message);
     throw new Error(error?.response?.data?.message || 'Erreur lors de l\'annulation de la commande');
   }
+};
+
+/**
+ * Filtre les commandes selon leur statut
+ */
+export const filterOrdersByStatus = (orders: OrderResponse[], status: OrderStatus[]): OrderResponse[] => {
+  return orders.filter(order => status.includes(order.status as OrderStatus));
+};
+
+/**
+ * Filtre les commandes en cours
+ */
+export const getActiveOrders = (orders: OrderResponse[]): OrderResponse[] => {
+  return filterOrdersByStatus(orders, [
+    OrderStatus.PENDING,
+    OrderStatus.CONFIRMED,
+    OrderStatus.PREPARING,
+    OrderStatus.READY
+  ]);
+};
+
+/**
+ * Filtre les commandes terminées
+ */
+export const getCompletedOrders = (orders: OrderResponse[]): OrderResponse[] => {
+  return filterOrdersByStatus(orders, [
+    OrderStatus.DELIVERED
+  ]);
+};
+
+/**
+ * Filtre les commandes annulées
+ */
+export const getCancelledOrders = (orders: OrderResponse[]): OrderResponse[] => {
+  return filterOrdersByStatus(orders, [
+    OrderStatus.CANCELLED
+  ]);
 };

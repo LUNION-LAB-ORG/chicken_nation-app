@@ -1,4 +1,4 @@
-export type PaymentMethod = "orange" | "momo" | "moov" | "wave" | "card";
+export type PaymentMethod = "orange" | "mtn" | "moov" | "wave" | "card";
 export type CheckoutStep =
   | "recap"
   | "payment"
@@ -35,7 +35,7 @@ export const paymentMethods = [
     icon: require("@/assets/icons/payments/orange.png"),
   },
   {
-    id: "momo" as PaymentMethod,
+    id: "mtn" as PaymentMethod,
     name: "MTN Mobile Money",
     icon: require("@/assets/icons/payments/momo.png"),
   },
