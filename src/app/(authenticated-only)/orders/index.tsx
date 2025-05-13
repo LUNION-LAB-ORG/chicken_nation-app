@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import ErrorModal from "@/components/ui/ErrorModal";
 import useOrderStore from "@/store/orderStore";
-import { OrderResponse, OrderStatus, getActiveOrders, getCompletedOrders, getCancelledOrders } from "@/services/api/orders";
+import { OrderResponse, OrderStatus, getActiveOrders, getCompletedOrders, getCancelledOrders, getOrderById, getOrderStatus, cancelOrder } from "@/services/api/orders";
 import { formatDate } from "@/utils/dateHelpers";
 import { AuthStorage } from "@/services/storage/auth-storage";
 import { formatImageUrl } from "@/utils/imageHelpers";
@@ -37,7 +37,54 @@ const TrackingModal: React.FC<{
   order: OrderResponse | null;
   onClose: () => void;
 }> = ({ visible, order, onClose }) => {
-  if (!order) return null;
+  const [currentOrder, setCurrentOrder] = useState<OrderResponse | null>(order);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Mettre à jour l'ordre actuel quand l'ordre passé en props change
+  useEffect(() => {
+    setCurrentOrder(order);
+  }, [order]);
+
+  // Rafraîchir l'état de la commande toutes les 10 secondes quand le modal est visible
+  useEffect(() => {
+    if (!visible || !order?.id) return;
+
+    const refreshOrder = async () => {
+      try {
+        setIsRefreshing(true);
+        console.log('[TrackingModal] Rafraîchissement du statut de la commande:', order.id);
+        // Récupérer uniquement le statut de la commande
+        const newStatus = await getOrderStatus(order.id);
+        console.log('[TrackingModal] Nouveau statut:', newStatus);
+        
+        if (newStatus) {
+          // Mettre à jour uniquement le statut de la commande
+          setCurrentOrder(prev => prev ? { ...prev, status: newStatus as OrderStatus } : null);
+          
+          // Si la commande est annulée, fermer le modal
+          if (newStatus === 'CANCELLED') {
+            console.log('[TrackingModal] Commande annulée, fermeture du modal');
+            onClose();
+          }
+        }
+      } catch (error) {
+        console.error("[TrackingModal] Erreur lors du rafraîchissement du statut:", error);
+      } finally {
+        setIsRefreshing(false);
+      }
+    };
+
+    // Rafraîchir immédiatement
+    refreshOrder();
+
+    // Configurer l'intervalle de rafraîchissement
+    const refreshInterval = setInterval(refreshOrder, 10000);
+
+    // Nettoyer l'intervalle lors de la fermeture du modal
+    return () => clearInterval(refreshInterval);
+  }, [visible, order?.id, onClose]);
+
+  if (!currentOrder) return null;
 
   const steps = [
     { 
@@ -73,12 +120,18 @@ const TrackingModal: React.FC<{
   ];
 
   const getCurrentStepIndex = () => {
-    return steps.findIndex(step => step.status === order.status);
+    return steps.findIndex(step => 
+      step.status === currentOrder.status || 
+      step.status.toString() === currentOrder.status
+    );
   };
 
   const isStepCompleted = (stepStatus: OrderStatus) => {
     const currentIndex = getCurrentStepIndex();
-    const stepIndex = steps.findIndex(step => step.status === stepStatus);
+    const stepIndex = steps.findIndex(step => 
+      step.status === stepStatus || 
+      step.status.toString() === stepStatus.toString()
+    );
     return stepIndex <= currentIndex;
   };
 
@@ -102,22 +155,27 @@ const TrackingModal: React.FC<{
     >
       <View className="flex-1 bg-black/50 justify-end">
         <View className="bg-white rounded-t-3xl p-6 max-h-[90%]">
-          {/* Header */}
+          {/* Header avec indicateur de rafraîchissement */}
           <View className="flex-row justify-between items-center mb-6">
             <View>
               <Text className="text-xl font-sofia-medium text-gray-900">
                 Suivi de commande
               </Text>
               <Text className="text-sm text-gray-500 font-sofia-regular">
-                Référence: {order.reference}
+                Référence: {currentOrder.reference}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose}>
-              <Image
-                source={require("@/assets/icons/close.png")}
-                className="w-6 h-6"
-              />
-            </TouchableOpacity>
+            <View className="flex-row items-center">
+              {isRefreshing && (
+                <ActivityIndicator size="small" color="#F97316" className="mr-2" />
+              )}
+              <TouchableOpacity onPress={onClose}>
+                <Image
+                  source={require("@/assets/icons/close.png")}
+                  className="w-6 h-6"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Temps estimé */}
@@ -181,7 +239,7 @@ const TrackingModal: React.FC<{
                   >
                     {step.description}
                   </Text>
-                  {step.status === order.status && (
+                  {step.status === currentOrder.status && (
                     <View className="mt-2 bg-orange-50 rounded-lg p-2">
                       <Text className="text-sm text-[#F97316] font-sofia-medium">
                         En cours
@@ -200,17 +258,17 @@ const TrackingModal: React.FC<{
             </Text>
             
             {/* Adresse de livraison */}
-            {order.address && (
+            {currentOrder.address && (
               <View className="mb-3">
                 <Text className="text-sm font-sofia-medium text-gray-500">
                   Adresse de livraison
                 </Text>
                 <Text className="text-base font-sofia-regular text-gray-900">
-                  {order.address.address}
+                  {currentOrder.address.address}
                 </Text>
-                {order.address.details && (
+                {currentOrder.address.details && (
                   <Text className="text-sm font-sofia-regular text-gray-500">
-                    {order.address.details}
+                    {currentOrder.address.details}
                   </Text>
                 )}
               </View>
@@ -222,7 +280,7 @@ const TrackingModal: React.FC<{
                 Contact
               </Text>
               <Text className="text-base font-sofia-regular text-gray-900">
-                {order.customer?.phone || order.phone}
+                {currentOrder.customer?.phone || currentOrder.phone}
               </Text>
             </View>
 
@@ -232,7 +290,7 @@ const TrackingModal: React.FC<{
                 Montant total
               </Text>
               <Text className="text-lg font-sofia-medium text-[#F97316]">
-                {order.amount} FCFA
+                {currentOrder.amount} FCFA
               </Text>
             </View>
           </View>
@@ -250,6 +308,8 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   const { fetchOrders } = useOrderStore();
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   
   // Récupérer le premier article de la commande pour l'affichage
   const firstItem = order.order_items && order.order_items.length > 0 ? order.order_items[0] : null;
@@ -319,8 +379,32 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   /**
    * Gère le clic sur le bouton d'annulation
    */
-  const handleCancel = () => {
-    setShowErrorModal(true);
+  const handleCancelClick = () => {
+    setShowConfirmModal(true);
+  };
+
+  /**
+   * Gère l'annulation de la commande
+   */
+  const handleCancel = async () => {
+    try {
+      setIsCancelling(true);
+      setShowConfirmModal(false);
+      console.log('[OrderCard] Tentative d\'annulation de la commande:', order.id);
+      
+      // Appeler l'API pour annuler la commande
+      await cancelOrder(order.id);
+      
+      // Rafraîchir la liste des commandes
+      await fetchOrders();
+      
+      console.log('[OrderCard] Commande annulée avec succès');
+    } catch (error) {
+      console.error('[OrderCard] Erreur lors de l\'annulation:', error);
+      setShowErrorModal(true);
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   return (
@@ -397,11 +481,16 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
             <View className="flex-row gap-4">
               <TouchableOpacity 
                 className="flex-1 py-[6px] rounded-full border-[1px] border-[#F97316]"
-                onPress={handleCancel}
+                onPress={handleCancelClick}
+                disabled={isCancelling}
               >
-                <Text className="text-center text-[#F97316] font-sofia-medium">
-                  Annuler
-                </Text>
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color="#F97316" />
+                ) : (
+                  <Text className="text-center text-[#F97316] font-sofia-medium">
+                    Annuler
+                  </Text>
+                )}
               </TouchableOpacity>
               <TouchableOpacity 
                 className="flex-1 py-[6px] rounded-full bg-[#F97316]"
@@ -416,10 +505,52 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
         </View>
       )}
 
+      {/* Modal de confirmation */}
+      <Modal
+        visible={showConfirmModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center p-4">
+          <View className="bg-white rounded-2xl p-6 w-full max-w-sm">
+            <Text className="text-xl font-sofia-medium text-gray-900 mb-4 text-center">
+              Annuler la commande ?
+            </Text>
+            <Text className="text-gray-600 text-center mb-6">
+              Êtes-vous sûr de vouloir annuler cette commande ? Cette action est irréversible.
+            </Text>
+            <View className="flex-row gap-4">
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl border border-gray-300"
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text className="text-center text-gray-600 font-sofia-medium">
+                  Non
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 py-3 rounded-xl bg-red-500"
+                onPress={handleCancel}
+                disabled={isCancelling}
+              >
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text className="text-center text-white font-sofia-medium">
+                    Oui, annuler
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal d'erreur */}
       <ErrorModal
         visible={showErrorModal}
-        message="Pour annuler votre commande en cours, veuillez contacter notre service client."
+        message="Une erreur est survenue lors de l'annulation de votre commande. Veuillez réessayer ou contacter notre service client."
         onClose={() => setShowErrorModal(false)}
       />
 
@@ -516,7 +647,7 @@ const Orders = () => {
     getUserId();
   }, []);
 
-  // Charger les commandes au montage du composant
+  // Charger les commandes au montage du composant et les rafraîchir automatiquement
   useEffect(() => {
     const loadOrders = async () => {
       try {
@@ -530,7 +661,15 @@ const Orders = () => {
         console.error("Erreur lors du chargement des commandes:", error);
       }
     };
+
+    // Charger les commandes immédiatement
     loadOrders();
+
+    // Configurer l'intervalle de rafraîchissement (toutes les 30 secondes)
+    const refreshInterval = setInterval(loadOrders, 30000);
+
+    // Nettoyer l'intervalle lors du démontage du composant
+    return () => clearInterval(refreshInterval);
   }, []);
 
   // Filtrer les commandes selon le filtre actif et l'ID de l'utilisateur

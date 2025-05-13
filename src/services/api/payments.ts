@@ -79,4 +79,31 @@ export const updatePayment = async (paymentId: string, data: Partial<CreatePayme
     console.error('[UPDATE PAYMENT] Erreur:', error.response?.data || error.message);
     throw new Error(error?.response?.data?.message || 'Erreur lors de la mise à jour du paiement');
   }
+};
+
+/**
+ * Récupère les paiements libres (succès)
+ * @returns Liste des paiements libres
+ */
+export const getFreePayments = async (): Promise<PaymentResponse[]> => {
+  try {
+    // Récupérer le token d'authentification
+    const authData = await AuthStorage.getAuthData();
+    if (!authData?.accessToken) {
+      throw new Error('Authentification requise pour récupérer les paiements');
+    }
+
+    // Envoyer la requête GET
+    const response = await api.get('v1/paiements/free', {
+      headers: {
+        'Authorization': `Bearer ${authData.accessToken}`,
+        'Accept': 'application/json'
+      }
+    });
+    console.log(response.data)
+    return response.data;
+  } catch (error: any) {
+    console.error('[GET FREE PAYMENTS] Erreur:', error.response?.data || error.message);
+    throw new Error(error?.response?.data?.message || 'Erreur lors de la récupération des paiements');
+  }
 }; 

@@ -44,7 +44,7 @@ interface OrderState {
   setSelectedRestaurantId: (id: string | null) => void;
   
   // Actions
-  fetchOrders: () => Promise<void>;
+  fetchOrders: (forceRefresh?: boolean) => Promise<void>;
   createGenericOrder: (orderData: BaseOrderData, resetStoreFunction?: () => void) => Promise<string | null>;
   createDeliveryOrder: (
     addressId: string, 
@@ -52,14 +52,16 @@ interface OrderState {
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   createTakeawayOrder: (
     fullname: string, 
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   createTableOrder: (
     fullname: string,
@@ -69,7 +71,8 @@ interface OrderState {
     tableType: string,
     numberOfPeople: number,
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   resetOrderState: () => void;
 }
@@ -88,7 +91,7 @@ const useOrderStore = create<OrderState>((set, get) => ({
   /**
    * Récupère toutes les commandes de l'utilisateur
    */
-  fetchOrders: async () => {
+  fetchOrders: async (forceRefresh: boolean = false) => {
     try {
       set({ isLoading: true, error: null });
       
@@ -103,8 +106,8 @@ const useOrderStore = create<OrderState>((set, get) => ({
       
       console.log('[ORDER STORE] Tentative de récupération des commandes pour l\'utilisateur:', userData.id);
       
-      // Récupérer les commandes (la fonction gère l'authentification en interne)
-      const orders = await getCustomerOrders(userData.id);
+      // Récupérer les commandes avec l'option forceRefresh
+      const orders = await getCustomerOrders(userData.id, forceRefresh);
       console.log('[ORDER STORE] Commandes reçues:', JSON.stringify(orders, null, 2));
       
       set({ orders, isLoading: false });
@@ -252,8 +255,13 @@ const useOrderStore = create<OrderState>((set, get) => ({
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => {
+    console.log('=== DELIVERY ORDER ===');
+    console.log('Payment ID:', paymentId);
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     const deliveryStore = useDeliveryStore.getState();
     // Récupérer l'objet d'adresse complet depuis le store de localisation
     const { addressDetails, coordinates } = useLocationStore.getState();
@@ -271,9 +279,11 @@ const useOrderStore = create<OrderState>((set, get) => ({
       phone, // Ajouter le champ phone obligatoire
       items: [],
       ...(note && { note }),
-      ...(promoCode && { code_promo: promoCode })
+      ...(promoCode && { code_promo: promoCode }),
+      ...(paymentId && { paiement_id: paymentId })
     };
     
+    console.log('Order Data:', JSON.stringify(orderData, null, 2));
     return get().createGenericOrder(
       orderData, 
       () => deliveryStore.setStep(DeliveryStep.CONFIRMATION)
@@ -289,9 +299,14 @@ const useOrderStore = create<OrderState>((set, get) => ({
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => {
+    console.log('=== PICKUP ORDER ===');
+    console.log('Payment ID:', paymentId);
     console.log('>>> createTakeawayOrder CALLED');
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     try {
       set({ isLoading: true, error: null });
       
@@ -322,118 +337,45 @@ const useOrderStore = create<OrderState>((set, get) => ({
       let addressObj = null;
       
       if (addressDetails && coordinates) {
-        // Utiliser l'adresse actuelle de l'utilisateur
-        // Extraire les composants d'adresse à partir de l'adresse formatée
-        const addressParts = (addressDetails.formattedAddress || addressDetails.address || "").split(',');
-        const streetName = addressParts.length > 0 ? addressParts[0].trim() : "";
-        const cityName = addressParts.length > 1 ? addressParts[1].trim() : "";
-        
         addressObj = {
-          title: addressDetails.title || "Adresse actuelle",
-          address: addressDetails.formattedAddress || addressDetails.address || "Adresse actuelle",
-          street: streetName,
-          city: cityName,
+          ...addressDetails,
           longitude: coordinates.longitude,
           latitude: coordinates.latitude,
-          note: ""
         };
-      } else if (userData?.addresses && userData.addresses.length > 0) {
+      } else if (userData.addresses && userData.addresses.length > 0) {
         // Utiliser la première adresse de l'utilisateur comme fallback
+        const userAddress = userData.addresses[0];
         addressObj = {
-          title: userData.addresses[0].title,
-          address: userData.addresses[0].address,
-          street: userData.addresses[0].street || "",
-          city: userData.addresses[0].city || "",
-          longitude: userData.addresses[0].longitude || 0,
-          latitude: userData.addresses[0].latitude || 0,
-          note: ""
-        };
-      } else {
-        // Adresse par défaut si aucune information de localisation n'est disponible
-        addressObj = {
-          title: "Commande à emporter",
-          address: "Retrait sur place",
-          street: "",
-          city: "",
-          longitude: 0,
-          latitude: 0,
-          note: ""
+          title: userAddress.title || 'Adresse principale',
+          address: userAddress.address,
+          street: userAddress.street || '',
+          city: userAddress.city || '',
+          longitude: userAddress.longitude || 0,
+          latitude: userAddress.latitude || 0
         };
       }
-      
-      // Préparer les items au format minimal attendu par l'API
-      const orderItems = cartStore.items.map(item => ({
-        dish_id: item.id,
-        quantity: item.quantity
-        // Pas de suppléments pour PICKUP
-      }));
-      
-      // Formater le numéro de téléphone avec la fonction utilitaire
-      const formattedPhone = formatPhoneForAPI(userData.phone);
-    
-      // Récupérer le restaurant sélectionné
-    let { selectedRestaurantId } = get();
-    
-    // Si aucun restaurant n'est sélectionné, on récupère dynamiquement un restaurant valide
-    if (!selectedRestaurantId) {
-      try {
-        console.log('Aucun restaurant sélectionné, récupération d\'un restaurant valide...');
-        
-        // Récupérer la liste des restaurants disponibles
-        const restaurants = await getAllRestaurants(1, 1); // Limiter à 1 restaurant pour optimiser
-        
-        if (restaurants && restaurants.length > 0) {
-          // Utiliser le premier restaurant disponible
-          selectedRestaurantId = restaurants[0].id;
-          console.log('Restaurant récupéré depuis le service:', selectedRestaurantId);
-        } else {
-          // Si aucun restaurant n'est disponible, lancer une erreur
-          throw new Error('Aucun restaurant disponible. Veuillez réessayer plus tard.');
-        }
-        
-        // Mettre à jour l'ID du restaurant sélectionné dans le store
-        set({ selectedRestaurantId });
-      } catch (error) {
-        console.error('Erreur lors de la récupération du restaurant:', error);
-        throw new Error('Impossible de récupérer un restaurant. Veuillez réessayer plus tard.');
+
+      if (!addressObj) {
+        throw new Error('Aucune adresse disponible. Veuillez ajouter une adresse à votre profil.');
       }
-    }
-    
-    console.log('PICKUP - Restaurant sélectionné:', selectedRestaurantId);
 
       const orderData: any = {
         type: OrderType.PICKUP,
         address: addressObj,
         fullname,
         email,
-        items: orderItems,
-        phone: formattedPhone,
+        phone,
+        items: [],
         ...(note && { note }),
-        ...(promoCode && { code_promo: promoCode })
+        ...(promoCode && { code_promo: promoCode }),
+        ...(paymentId && { paiement_id: paymentId })
       };
-      // Le restaurant_id est obligatoire pour les commandes PICKUP
-    if (!selectedRestaurantId) {
-      throw new Error('Aucun restaurant sélectionné. Veuillez sélectionner un restaurant.');
-    }
-    orderData.restaurant_id = selectedRestaurantId;  
-      console.log('PICKUP - Payload envoyé à l\'API:', orderData);
       
-      // Utiliser la fonction qui fonctionne pour PICKUP
-      const response = await createPickupOrderLikeDelivery(orderData);
-      
-      // Mettre à jour l'état
-      set({ 
-        currentOrderId: response.id,
-        isLoading: false 
-      });
-      
-      // Réinitialiser le store spécifique
-      takeawayStore.reset();
-      
-      // Vider le panier après une commande réussie
-      await cartStore.clearCart();
-      
-      return response.id;
+      console.log('Order Data:', JSON.stringify(orderData, null, 2));
+      return get().createGenericOrder(
+        orderData,
+        () => takeawayStore.reset()
+      );
     } catch (error: any) {
       set({ 
         isLoading: false, 
@@ -455,17 +397,34 @@ const useOrderStore = create<OrderState>((set, get) => ({
     tableType: string,
     numberOfPeople: number,
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ): Promise<string | null> => {
+    console.log('=== TABLE ORDER ===');
+    console.log('Payment ID:', paymentId);
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     try {
       set({ isLoading: true, error: null });
       
       const reservationStore = useReservationStore.getState();
       const cartStore = useCartStore.getState();
+      const selectedRestaurantId = get().selectedRestaurantId;
       
       // Vérifier si le panier est vide
       if (cartStore.items.length === 0) {
         throw new Error('Le panier est vide');
+      }
+      
+      // Vérifier si un restaurant est sélectionné
+      if (!selectedRestaurantId) {
+        throw new Error('Aucun restaurant sélectionné');
+      }
+      
+      // Récupérer les détails du restaurant
+      const restaurantDetails = await getRestaurantById(selectedRestaurantId);
+      if (!restaurantDetails) {
+        throw new Error('Restaurant introuvable');
       }
       
       // Récupérer les données utilisateur
@@ -479,123 +438,9 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Numéro de téléphone non disponible. Veuillez mettre à jour votre profil.');
       }
 
-      // Récupérer le restaurant sélectionné
-      const { selectedRestaurantId } = get();
-      if (!selectedRestaurantId) {
-        throw new Error('Veuillez sélectionner un restaurant pour votre réservation.');
-      }
-
-      // Récupérer les détails du restaurant
-      const restaurant = await getRestaurantById(selectedRestaurantId);
-      if (!restaurant) {
-        throw new Error('Restaurant non trouvé');
-      }
-
       // Formater la date et l'heure
-      let formattedDate = date;
-      let formattedTime = time;
-      
-      if (date && !date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-        const dateObj = new Date(date);
-        formattedDate = dateObj.toLocaleDateString('fr-FR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        });
-      }
-      
-      if (time && !time.match(/^\d{2}:\d{2}$/)) {
-        const match = time.match(/(\d{1,2})[:\s](\d{2})/);
-        if (match) {
-          const hours = match[1].padStart(2, '0');
-          const minutes = match[2];
-          formattedTime = `${hours}:${minutes}`;
-        }
-      }
-
-      // Récupérer le restaurant sélectionné (si besoin)
-      const { selectedRestaurantId: currentSelectedRestaurantId } = get();
-      if (!currentSelectedRestaurantId) {
-        throw new Error('Veuillez sélectionner un restaurant pour votre réservation.');
-      }
-
-      // Récupérer le restaurant sélectionné (si besoin)
-      const { selectedRestaurantId: restaurantSelectedRestaurantId } = get();
-      if (!restaurantSelectedRestaurantId) {
-        throw new Error('Veuillez sélectionner un restaurant pour votre réservation.');
-      }
-
-      // Récupérer les détails du restaurant
-      const restaurantDetails = await getRestaurantById(restaurantSelectedRestaurantId);
-      if (!restaurantDetails) {
-        throw new Error('Restaurant non trouvé');
-      }
-
-      // Récupérer l'adresse depuis le locationStore (adresse actuelle de l'utilisateur)
-      const { addressDetails: userAddressDetails, coordinates: userCoordinates } = useLocationStore.getState();
-      
-      // Nous allons stocker l'adresse de l'utilisateur pour des calculs ultérieurs
-      // mais nous utiliserons toujours l'adresse du restaurant pour l'adresse de la commande
-      let userAddressObj = null;
-      
-      if (userAddressDetails && userCoordinates) {
-        // Utiliser l'adresse actuelle de l'utilisateur
-        // Extraire les composants d'adresse à partir de l'adresse formatée
-        const addressParts = (userAddressDetails.formattedAddress || userAddressDetails.address || "").split(',');
-        const streetName = addressParts.length > 0 ? addressParts[0].trim() : "";
-        const cityName = addressParts.length > 1 ? addressParts[1].trim() : "";
-        
-        userAddressObj = {
-          title: userAddressDetails.title || "Adresse actuelle",
-          address: userAddressDetails.formattedAddress || userAddressDetails.address || "Adresse actuelle",
-          street: streetName,
-          city: cityName,
-          longitude: userCoordinates.longitude,
-          latitude: userCoordinates.latitude,
-          note: ""
-        };
-      } else if (userData?.addresses && userData.addresses.length > 0) {
-        // Utiliser la première adresse de l'utilisateur comme fallback
-        userAddressObj = {
-          title: userData.addresses[0].title,
-          address: userData.addresses[0].address,
-          street: userData.addresses[0].street || "",
-          city: userData.addresses[0].city || "",
-          longitude: userData.addresses[0].longitude || 0,
-          latitude: userData.addresses[0].latitude || 0,
-          note: ""
-        };
-      }
-      
-      // Stocker l'adresse de l'utilisateur dans AsyncStorage pour une utilisation ultérieure
-      if (userAddressObj) {
-        try {
-          await AsyncStorage.setItem('user_location_for_calculations', JSON.stringify(userAddressObj));
-        } catch (error) {
-          console.error('Erreur lors de la sauvegarde de la localisation utilisateur:', error);
-        }
-      }
-      
-      // Préparer les items au format minimal attendu par l'API
-      const orderItems = cartStore.items.map(item => ({
-        dish_id: item.id,
-        quantity: item.quantity
-        // Pas de suppléments pour TABLE
-      }));
-      
-      // Formater le numéro de téléphone avec la fonction utilitaire
-      const formattedPhone = formatPhoneForAPI(userData.phone);
-      
-      // Construire l'objet address complet pour le backend
-      const addressObj = {
-        title: restaurantDetails.name,
-        address: restaurantDetails.address,
-        street: restaurantDetails.address.split(',')[0] || '',
-        city: restaurantDetails.address.split(',')[1]?.trim() || '',
-        longitude: restaurantDetails.longitude || 0,
-        latitude: restaurantDetails.latitude || 0,
-        note: '',
-      };
+      const formattedDate = date.split('T')[0];
+      const formattedTime = time;
 
       const orderData: any = {
         type: OrderType.TABLE,
@@ -603,34 +448,31 @@ const useOrderStore = create<OrderState>((set, get) => ({
         email,
         date: formattedDate,
         time: formattedTime,
-        items: orderItems,
-        address: addressObj,              // Objet complet JSON
+        items: [],
+        address: {
+          title: restaurantDetails.name,
+          address: restaurantDetails.address,
+          street: restaurantDetails.address.split(',')[0] || '',
+          city: restaurantDetails.address.split(',')[1]?.trim() || '',
+          longitude: restaurantDetails.longitude || 0,
+          latitude: restaurantDetails.latitude || 0,
+          note: '',
+        },
         restaurant_id: selectedRestaurantId,
         table_type: tableType,
         places: numberOfPeople,
-        phone: formattedPhone,
+        phone: userData.phone,
         ...(note && { note }),
-        ...(promoCode && { code_promo: promoCode })
+        ...(promoCode && { code_promo: promoCode }),
+        ...(paymentId && { paiement_id: paymentId })
       };
       
-      console.log('Payload TABLE:', orderData);
-      const response = await createOrder(orderData);
-      
-      // Mettre à jour l'état
-      set({ 
-        currentOrderId: response.id,
-        isLoading: false 
-      });
-      
-      // Réinitialiser le store spécifique
-      reservationStore.completeReservation();
-      
-      // Vider le panier après une commande réussie
-      await cartStore.clearCart();
-      
-      return response.id;
+      console.log('Order Data:', JSON.stringify(orderData, null, 2));
+      return get().createGenericOrder(
+        orderData,
+        () => reservationStore.completeReservation()
+      );
     } catch (error: any) {
-      console.error("Erreur lors de la création de la commande TABLE:", error);
       set({ 
         isLoading: false, 
         error: error.message || 'Erreur lors de la création de la commande' 

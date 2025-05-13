@@ -469,13 +469,13 @@ export const createTableOrderLikeDelivery = async ({
 /**
  * Récupère les commandes d'un client
  * @param customerId ID du client (optionnel, utilise l'ID du client connecté si non fourni)
+ * @param forceRefresh Force le rafraîchissement des données en ignorant le cache
  * @returns Liste des commandes du client
  */
-export const getCustomerOrders = async (customerId?: string): Promise<OrderResponse[]> => {
+export const getCustomerOrders = async (customerId?: string, forceRefresh: boolean = false): Promise<OrderResponse[]> => {
   try {
     // Récupérer le token d'authentification
     const authData = await AuthStorage.getAuthData();
-    
 
     if (!authData?.accessToken) {
       throw new Error('Authentification requise pour récupérer les commandes');
@@ -483,7 +483,6 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
 
     // Configurer le token pour toutes les requêtes
     setAuthToken(authData.accessToken);
-    
 
     // Récupérer l'ID du client connecté si non fourni
     if (!customerId) {
@@ -494,16 +493,17 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
       customerId = userData.id;
     }
 
-    // Vérifier le cache
-    const cacheKey = `customer_orders_${customerId}`;
-    const cachedOrders = await orderCache.get(cacheKey);
-    if (cachedOrders) {
-      return cachedOrders;
+    // Vérifier le cache seulement si forceRefresh est false
+    if (!forceRefresh) {
+      const cacheKey = `customer_orders_${customerId}`;
+      const cachedOrders = await orderCache.get(cacheKey);
+      if (cachedOrders) {
+        return cachedOrders;
+      }
     }
 
     // Utiliser le bon endpoint
     const url = `v1/orders/customer`;
- 
 
     // Envoyer la requête
     const response = await api.get(url, {
@@ -517,10 +517,9 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
     // Extraire les données de la réponse
     const orders = response.data.data || response.data || [];
 
-    // Formater les données si nécessaire (par exemple, les URLs d'images)
+    // Formater les données si nécessaire
     const formattedOrders = Array.isArray(orders) 
       ? orders.map((order: any) => {
-          // Formater les images des plats si présentes
           if (order.items && Array.isArray(order.items)) {
             order.items = order.items.map((item: any) => {
               if (item.dish && item.dish.image) {
@@ -533,8 +532,11 @@ export const getCustomerOrders = async (customerId?: string): Promise<OrderRespo
         })
       : [];
 
-    // Mettre en cache les résultats
-    await orderCache.set(cacheKey, formattedOrders, true);
+    // Mettre en cache les résultats seulement si forceRefresh est false
+    if (!forceRefresh) {
+      const cacheKey = `customer_orders_${customerId}`;
+      await orderCache.set(cacheKey, formattedOrders, true);
+    }
 
     return formattedOrders;
   } catch (error: any) {
@@ -600,8 +602,6 @@ export const cancelOrder = async (orderId: string): Promise<boolean> => {
   try {
     // Récupérer le token d'authentification
     const authData = await AuthStorage.getAuthData();
-    
-
     if (!authData?.accessToken) {
       throw new Error('Authentification requise pour annuler une commande');
     }
@@ -609,16 +609,14 @@ export const cancelOrder = async (orderId: string): Promise<boolean> => {
     // Configurer le token pour toutes les requêtes
     setAuthToken(authData.accessToken);
 
-    // Envoyer la requête DELETE
-    const response = await api.delete(`v1/orders/${orderId}`, {
+    // Envoyer la requête DELETE avec les headers appropriés
+    await api.delete(`/v1/orders/${orderId}`, {
       headers: {
         'Authorization': `Bearer ${authData.accessToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       }
     });
-
-   
 
     // Invalider le cache
     await orderCache.invalidate(`order_${orderId}`);
@@ -634,8 +632,8 @@ export const cancelOrder = async (orderId: string): Promise<boolean> => {
 /**
  * Filtre les commandes selon leur statut
  */
-export const filterOrdersByStatus = (orders: OrderResponse[], status: OrderStatus[]): OrderResponse[] => {
-  return orders.filter(order => status.includes(order.status as OrderStatus));
+export const filterOrdersByStatus = (orders: OrderResponse[], status: (OrderStatus | string)[]): OrderResponse[] => {
+  return orders.filter(order => status.includes(order.status));
 };
 
 /**
@@ -646,7 +644,11 @@ export const getActiveOrders = (orders: OrderResponse[]): OrderResponse[] => {
     OrderStatus.PENDING,
     OrderStatus.CONFIRMED,
     OrderStatus.PREPARING,
-    OrderStatus.READY
+    OrderStatus.READY,
+    'PENDING',
+    'CONFIRMED',
+    'PREPARING',
+    'READY'
   ]);
 };
 
@@ -655,7 +657,8 @@ export const getActiveOrders = (orders: OrderResponse[]): OrderResponse[] => {
  */
 export const getCompletedOrders = (orders: OrderResponse[]): OrderResponse[] => {
   return filterOrdersByStatus(orders, [
-    OrderStatus.DELIVERED
+    OrderStatus.DELIVERED,
+    'DELIVERED'
   ]);
 };
 
@@ -664,6 +667,33 @@ export const getCompletedOrders = (orders: OrderResponse[]): OrderResponse[] => 
  */
 export const getCancelledOrders = (orders: OrderResponse[]): OrderResponse[] => {
   return filterOrdersByStatus(orders, [
-    OrderStatus.CANCELLED
+    OrderStatus.CANCELLED,
+    'CANCELLED'
   ]);
+};
+
+/**
+ * Récupère le statut d'une commande spécifique
+ * @param orderId ID de la commande
+ * @returns Statut de la commande
+ */
+export const getOrderStatus = async (orderId: string): Promise<string> => {
+  try {
+    // Récupérer le token d'authentification
+    const authData = await AuthStorage.getAuthData();
+    if (!authData?.accessToken) {
+      throw new Error('Authentification requise pour récupérer le statut de la commande');
+    }
+
+    // Envoyer la requête
+    const response = await api.get(`/v1/orders/${orderId}/status`, {
+      headers: {
+        Authorization: `Bearer ${authData.accessToken}`
+      }
+    });
+
+    return response.data.status;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.message || 'Erreur lors de la récupération du statut de la commande');
+  }
 };
