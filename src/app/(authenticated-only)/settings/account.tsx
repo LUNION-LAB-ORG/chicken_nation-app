@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Dimensions, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Dimensions, TextInput, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
@@ -10,8 +10,9 @@ import { getCustomerDetails } from "@/services/api/customer";
 import { useAuth } from "@/app/context/AuthContext";
 import ErrorModal from "@/components/ui/ErrorModal";
 import { format } from "date-fns";
-import { api, setAuthToken } from "@/services/api/api"; 
+import { api, setAuthToken, API_BASE_URL } from "@/services/api/api"; 
 import { formatImageUrl } from '@/utils/imageHelpers';
+import GradientButton from "@/components/ui/GradientButton";
 
 const { width } = Dimensions.get('window');
 const PROFILE_IMAGE_SIZE = width * 0.85;
@@ -455,6 +456,9 @@ const AccountSettings = () => {
         return;
       }
 
+      // S'assurer que le token est bien configuré pour la requête
+      setAuthToken(accessToken);
+
       // Création du FormData pour l'envoi des données
       const formData = new FormData();
       
@@ -462,103 +466,86 @@ const AccountSettings = () => {
       if (firstName.trim()) {
         formData.append('first_name', firstName.trim());
       }
-      
       if (lastName.trim()) {
         formData.append('last_name', lastName.trim());
       }
-      
-      // Ajout de la date de naissance si disponible
       if (birthDate) {
         formData.append('birth_day', format(birthDate, 'dd/MM/yyyy'));
       }
-      
-      // Ajout de l'email uniquement s'il a une valeur
       if (email.trim()) {
         formData.append('email', email.trim());
       }
+      if (phone && phone.trim()) {
+        formData.append('phone', phone.trim());
+        console.log('Numéro de téléphone envoyé:', phone.trim());
+      }
       
-      // Ajout de l'image si disponible et si c'est une nouvelle image
+      // Ajout de l'image si disponible et si c'est une nouvelle image (commence par 'file:')
       let hasNewImage = false;
       if (profileImage && profileImage.startsWith('file:')) {
         hasNewImage = true;
+        // Extraction du nom et du type de l'image
         const uriParts = profileImage.split('/');
         const fileName = uriParts[uriParts.length - 1];
-        const fileType = fileName.split('.').pop()?.toLowerCase() === 'png' 
-          ? 'image/png' 
-          : 'image/jpeg';
-        
-        formData.append('image', {
-          uri: profileImage,
+        // Correction du type MIME
+        let fileType = 'image/jpeg';
+        if (fileName.toLowerCase().endsWith('.png')) fileType = 'image/png';
+        if (fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')) fileType = 'image/jpeg';
+        // Ajouter l'image au FormData
+        const imageToUpload = {
+          uri: Platform.OS === 'android' ? profileImage : profileImage.replace('file://', ''),
           name: fileName,
           type: fileType,
-        } as any);
+        };
+        formData.append('image', imageToUpload as any);
+        console.log('Image à envoyer:', imageToUpload);
       }
       
-      // Vérifier si le FormData contient des données à envoyer
-      let hasData = false;
-      // @ts-ignore
-      for (let [key, value] of formData._parts || []) {
-        hasData = true;
-        break;
-      }
-      
-      if (!hasData) {
-        setErrorMessage("Aucune modification à enregistrer");
-        setUpdating(false);
-        return;
-      }
-
-      // S'assurer que le token est bien configuré pour la requête
-      setAuthToken(accessToken);
-      
-      const response = await api.patch('/v1/customer', formData, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000,
-      });
-      
-      // Déterminer l'URL de l'image à utiliser
-      let imageUrl = null;
-      
-      if (response.data && response.data.image) {
-        imageUrl = formatImageUrl(response.data.image);
-      } else if (hasNewImage && profileImage) {
-        imageUrl = profileImage;
-      } else if (user?.image) {
-        imageUrl = formatImageUrl(user.image);
-      }
-      
-      // Mise à jour des données utilisateur dans le contexte
-      const updatedUserData = {
-        ...user,
-        first_name: firstName,
-        last_name: lastName,
-        birth_day: birthDate ? format(birthDate, 'dd/MM/yyyy') : null,
-        email: email || null,
-        phone: phone,
-        image: imageUrl,
-      };
-      
-      // Mettre à jour le contexte avec les nouvelles données
-      updateUserData(updatedUserData, true);
-      
-      setSuccessMessage("Profil mis à jour avec succès !");
-      
-      // Recharger les données fraîches depuis l'API
-      try {
-        const freshUserData = await getCustomerDetails();
-        if (freshUserData) {
-          updateUserData(freshUserData, true);
-          console.log('Données utilisateur rechargées depuis l\'API');
+      // Log détaillé du contenu du FormData
+      if ((formData as any)._parts) {
+        for (let [key, value] of (formData as any)._parts) {
+          console.log('FormData part:', key, value);
         }
-      } catch (refreshError) {
-        console.error('Erreur lors du rechargement des données utilisateur:', refreshError);
       }
+      // Log de l'URL d'API pour debug
+      const apiUrl = `${API_BASE_URL}/v1/customer`;
+      console.log('API URL utilisée pour PATCH:', apiUrl);
+      // IMPORTANT : ne pas utiliser localhost sur Android, utiliser l'IP locale !
+      try {
+        // Utiliser fetch natif pour l'upload multipart (plus fiable qu'Axios sur mobile)
+        const fetchResponse = await fetch(apiUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            // PAS de Content-Type ici !
+          },
+          body: formData,
+        });
+        const data = await fetchResponse.json();
+        console.log('Réponse fetch natif:', data);
+        if (fetchResponse.ok) {
+          setSuccessMessage('Profil mis à jour avec succès !');
+          // Met à jour le contexte utilisateur si besoin
+          updateUserData({
+            ...user,
+            ...data,
+            image: data.image ? formatImageUrl(data.image) : user?.image,
+          }, false);
+        } else {
+          setErrorMessage('Erreur lors de la mise à jour du profil : ' + (data?.message || fetchResponse.status));
+          setShowErrorModal(true);
+        }
+      } catch (fetchErr) {
+        console.error('Erreur lors de la mise à jour du profil (fetch natif):', fetchErr);
+        setErrorMessage('Erreur réseau (fetch natif) : ' + (fetchErr.message || ''));
+        setShowErrorModal(true);
+      }
+      setUpdating(false);
+      return;
     } catch (e: any) {
       console.error('Erreur lors de la mise à jour du profil:', e);
+      // Afficher plus de détails sur l'erreur
       if (e.response) {
         const errorMessage = e.response.data?.message || e.message || "Erreur lors de la mise à jour du profil";
         setErrorMessage(errorMessage);
@@ -700,15 +687,17 @@ const AccountSettings = () => {
         </View>
         <View className="h-8" />
         {/* BOUTON METTRE À JOUR */}
-        <TouchableOpacity
-          className="bg-orange-500 rounded-2xl mx-8 py-4 items-center mb-8"
+       <View className="mx-8 mb-8">
+       <GradientButton
           onPress={handleUpdateProfile}
           disabled={updating || loadingProfile}
+         
+          style={{ width: "100%" }}
         >
-          <Text className="text-white text-lg font-sofia-bold">
-            {updating ? "Mise à jour..." : "Mettre à jour"}
-          </Text>
-        </TouchableOpacity>
+          {updating ? "Mise à jour..." : "Mettre à jour"}
+        </GradientButton>
+       </View>
+
         {successMessage ? (
           <View className="mx-8 mb-4 bg-green-100 rounded-xl p-3 items-center">
             <Text className="text-green-700 font-sofia-medium">{successMessage}</Text>

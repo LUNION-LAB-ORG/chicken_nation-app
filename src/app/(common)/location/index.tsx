@@ -12,9 +12,8 @@ import * as ExpoLocation from "expo-location";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import LocationBottomSheet from "@/components/ui/LocationBottomSheet";
-import CustomStatusBar from "@/components/ui/CustomStatusBar";
-import BackButtonTwo from "@/components/ui/BackButtonTwo";
-import { useLocation } from "../../context/LocationContext";
+import CustomStatusBar from "@/components/ui/CustomStatusBar"; 
+import useLocationStore from "@/store/locationStore";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import Spinner from "@/components/ui/Spinner"; 
 import { addUserAddress, Address } from "@/services/api/address";
@@ -37,15 +36,15 @@ const ABIDJAN_REGION: Region = {
 const Location: React.FC = () => {
   const mapRef = useRef<MapView | null>(null);
   const {
-    locationData,
+    coordinates,
     setCoordinates,
     setLocationType,
-    reverseGeocode,
     setAddressDetails,
-  } = useLocation();
+    clearLocationData,
+  } = useLocationStore();
   const params = useLocalSearchParams();
   const [currentLocation, setCurrentLocation] = useState<Coordinates | null>(
-    locationData.coordinates,
+    coordinates
   );
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [showTitleModal, setShowTitleModal] = useState<boolean>(false);
@@ -54,16 +53,16 @@ const Location: React.FC = () => {
   const [isMovingMarker, setIsMovingMarker] = useState<boolean>(false);
   const router = useRouter();
 
-  // Mise à jour de la carte quand les coordonnées changent dans le contexte
+  // Mise à jour de la carte quand les coordonnées changent dans le store
   useEffect(() => {
-    if (locationData.coordinates) {
-      setCurrentLocation(locationData.coordinates);
+    if (coordinates) {
+      setCurrentLocation(coordinates);
       centerOnLocation(
-        locationData.coordinates.latitude,
-        locationData.coordinates.longitude
+        coordinates.latitude,
+        coordinates.longitude
       );
     }
-  }, [locationData.coordinates]);
+  }, [coordinates]);
 
   // Gestion des coordonnées reçues via les paramètres de navigation
   useEffect(() => {
@@ -160,22 +159,50 @@ const Location: React.FC = () => {
     if (!currentLocation) {
       Alert.alert(
         "Localisation non disponible",
-        "Veuillez activer la localisation ou sélectionner un point sur la carte.",
+        "Veuillez sélectionner un point sur la carte.",
         [{ text: "OK" }],
       );
       return;
     }
-
     try {
-      const formattedAddress = await reverseGeocode(currentLocation);
-      router.push({
-        pathname: "/location/add-title",
-        params: {
-          coordinates: JSON.stringify(currentLocation),
-          formattedAddress: formattedAddress.includes("Position:") ? "Position actuelle" : formattedAddress,
-          type: "auto"
-        }
-      });
+      setIsLocating(true);
+      // Utiliser l'API Google Maps pour le geocoding inverse sur la position du marqueur
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${currentLocation.latitude},${currentLocation.longitude}&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY&language=fr`
+      );
+      const data = await response.json();
+      if (data && data.results && data.results.length > 0) {
+        const result = data.results[0];
+        const addressComponents = result.address_components;
+        const streetNumber = addressComponents?.find((component: any) => 
+          component.types.includes('street_number'))?.long_name || '';
+        const route = addressComponents?.find((component: any) => 
+          component.types.includes('route'))?.long_name || '';
+        const city = addressComponents?.find((component: any) => 
+          component.types.includes('locality'))?.long_name || '';
+        const addressDetails = {
+          title: route || "Adresse sélectionnée",
+          address: result.formatted_address,
+          street: `${streetNumber} ${route}`.trim(),
+          city: city,
+          longitude: currentLocation.longitude,
+          latitude: currentLocation.latitude,
+          formattedAddress: result.formatted_address,
+          addressId: "current"
+        };
+
+        // D'abord effacer les données existantes
+        await clearLocationData();
+        
+        // Ensuite mettre à jour avec les nouvelles données
+        setCoordinates(currentLocation);
+        setLocationType("manual"); // Forcer le type à "manual" pour empêcher les mises à jour automatiques
+        setAddressDetails(addressDetails);
+        
+        router.push("/(tabs-user)");
+      } else {
+        throw new Error("Impossible de récupérer l'adresse");
+      }
     } catch (error) {
       console.error("Erreur lors de la récupération de l'adresse:", error);
       Alert.alert(
@@ -183,6 +210,8 @@ const Location: React.FC = () => {
         "Impossible de récupérer l'adresse. Veuillez réessayer.",
         [{ text: "OK" }],
       );
+    } finally {
+      setIsLocating(false);
     }
   };
 

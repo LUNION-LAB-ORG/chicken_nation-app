@@ -11,7 +11,7 @@ import { extractPriceNumber, formatPrice } from "@/utils/priceHelpers";
  */
 export const useCartActions = (productId: string, menuItem: any, promoDetails: any) => {
   const { addToCart, removeFromCart, items } = useCartStore();
-  const [quantity, setQuantity] = useState(0);
+  const [quantity, setQuantity] = useState(1);
   const [selectedSupplements, setSelectedSupplements] = useState<{
     [key: string]: {
       name: string;
@@ -92,7 +92,7 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
 
   // Gérer la diminution de la quantité
   const handleDecrement = () => {
-    if (quantity > 0) {
+    if (quantity > 1) {
       setQuantity((prev) => prev - 1);
     }
   };

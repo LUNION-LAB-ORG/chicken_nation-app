@@ -1,4 +1,4 @@
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 import React from "react";
 import HomeSearchBar from "@/components/home/HomeSearchBar";
 import HomeLocation from "@/components/home/HomeLocation";
@@ -35,13 +35,18 @@ const SpecialOffers = () => {
         </Animated.View>
 
         {/* Section des bannières d'offres */}
+        <ScrollView showsVerticalScrollIndicator={false}>
         <Animated.View
           entering={FadeInDown.duration(800).delay(400)}
           layout={Layout.springify()}
-          className="mt-4 px-6"
+          className="mt-4 px-6 mb-10"
         >
           <OfferBanner />
+          {/* Espace en bas */}
+          <View className="h-8" />
         </Animated.View>
+        </ScrollView>
+        
       </Animated.View>
     </View>
   );

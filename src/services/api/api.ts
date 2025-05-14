@@ -2,7 +2,7 @@
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
 import { AuthStorage } from "@/services/storage/auth-storage";
 
-const API_BASE_URL = "https://chicken.turbodeliveryapp.com/api";
+export const API_BASE_URL = "https://chicken.turbodeliveryapp.com/api";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

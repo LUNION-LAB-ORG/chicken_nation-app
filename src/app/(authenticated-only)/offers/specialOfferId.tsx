@@ -12,7 +12,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import DynamicHeader from "@/components/home/DynamicHeader";
-import { promoBanners, menuItems } from "@/data/MockedData";
+import { promoBanners } from "@/data/MockedData";
 import { FontAwesome } from "@expo/vector-icons";
 import Animated, {
   FadeInDown,
@@ -25,12 +25,16 @@ import Animated, {
   Easing,
   interpolate,
   Extrapolate,
+  Layout,
+  ZoomIn,
 } from "react-native-reanimated";
 import useCartStore from "@/store/cartStore";
+import MenuItem from "@/components/menu/MenuItem";
+import { getAllMenus } from "@/services/menuService";
+import { MenuItem as MenuItemType } from "@/types";
 
 const screenWidth = Dimensions.get("window").width;
 
- 
 const fadeInConfig = {
   damping: 20,
   mass: 0.8,
@@ -40,13 +44,10 @@ const fadeInConfig = {
 
 const SpecialOfferDetailScreen: React.FC = () => {
   const { specialId } = useLocalSearchParams<{ specialId: string }>();
-  type ExtendedMenuItem = (typeof menuItems)[0] & {
-    originalPrice: string;
-    discountedPrice: string;
-  };
-  const [offerMenus, setOfferMenus] = useState<ExtendedMenuItem[]>([]);
+  const [offerMenus, setOfferMenus] = useState<MenuItemType[]>([]);
   const [offer, setOffer] = useState<any>(null);
-  const [quantities, setQuantities] = useState<{ [key: string]: number }>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Animation values
   const bannerScale = useSharedValue(0.95);
@@ -54,61 +55,66 @@ const SpecialOfferDetailScreen: React.FC = () => {
   const contentTranslateY = useSharedValue(20);
 
   // Récupération des méthodes du panier
-  const { addToCart, updateQuantity, decrementItem } = useCartStore();
+  const { addToCart } = useCartStore();
 
   useEffect(() => {
-    // Animation  de la bannière
+    // Animation de la bannière
     bannerScale.value = withSpring(1, {
       damping: 15,
       stiffness: 100,
       mass: 0.8,
     });
 
- 
     bannerOpacity.value = withTiming(1, {
       duration: 800,
       easing: Easing.bezier(0.25, 0.1, 0.25, 1),
     });
 
-  
     contentTranslateY.value = withSpring(0, {
       damping: 20,
       stiffness: 100,
       mass: 0.8,
     });
 
-    if (specialId) {
-      const currentOffer = promoBanners.find(
-        (banner) => banner.offerId === specialId,
-      );
-      if (currentOffer) {
-        setOffer(currentOffer);
-        // Filtrer les menus par les IDs associés à l'offre
-        const associatedMenus = menuItems
-          .filter((menu) => currentOffer.menuIds.includes(menu.id))
-          .map((menu) => ({
-            ...menu,
-            originalPrice: currentOffer.promoDetails.originalPrices[menu.id],
-            discountedPrice: calculateDiscountedPrice(
-              currentOffer.promoDetails.originalPrices[menu.id],
-              currentOffer.promoDetails.discount,
-            ),
-          }));
-        setOfferMenus(associatedMenus as ExtendedMenuItem[]);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        if (specialId) {
+          const currentOffer = promoBanners.find(
+            (banner) => banner.offerId === specialId,
+          );
+          
+          if (currentOffer) {
+            setOffer(currentOffer);
+            
+            // Récupérer tous les menus
+            const menuData = await getAllMenus();
+            
+            if (menuData && menuData.length > 0) {
+              // Filtrer les menus par les IDs associés à l'offre
+              const associatedMenus = menuData.filter((menu) => 
+                currentOffer.menuIds.includes(menu.id)
+              );
+              setOfferMenus(associatedMenus);
+            } else {
+              setError("Aucun menu disponible pour cette offre");
+            }
+          } else {
+            setError("Offre non trouvée");
+          }
+        }
+      } catch (err) {
+        setError(`Erreur lors du chargement des données: ${err.message}`);
+      } finally {
+        setLoading(false);
       }
-    }
+    };
+
+    fetchData();
   }, [specialId]);
 
-  const calculateDiscountedPrice = (
-    originalPrice: string,
-    discount: number,
-  ): string => {
-    const price = parseInt(originalPrice);
-    const discounted = price - (price * discount) / 100;
-    return discounted.toString();
-  };
-
- 
   const bannerAnimatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
@@ -138,49 +144,32 @@ const SpecialOfferDetailScreen: React.FC = () => {
     };
   });
 
-  const handleIncrement = (menuItem: any) => {
-    setQuantities((prev) => ({
-      ...prev,
-      [menuItem.id]: (prev[menuItem.id] || 0) + 1,
-    }));
+  if (loading) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <Text className="text-gray-600 font-urbanist-medium">Chargement...</Text>
+      </View>
+    );
+  }
 
-    // Créer l'item pour le panier avec le prix réduit
-    const cartItem = {
-      id: menuItem.id,
-      name: menuItem.name,
-      discountedPrice: parseInt(menuItem.discountedPrice),
-      quantity: 1,
-      image: menuItem.image,
-      price: menuItem.originalPrice,
-      discount: offer.promoDetails.discount,
-      extras: [],
-    };
-
-    addToCart(cartItem);
-  };
-
-  const handleDecrement = (menuItem: any) => {
-    if (quantities[menuItem.id] > 0) {
-      setQuantities((prev) => ({
-        ...prev,
-        [menuItem.id]: Math.max((prev[menuItem.id] || 0) - 1, 0),
-      }));
-      decrementItem(menuItem.id);
-    }
-  };
-
-  const handleMenuPress = (menu: any) => {
-    router.push({
-      pathname: "/(common)/products/[productId]",
-      params: {
-        productId: menu.id,
-        offerId: specialId,
-        discount: offer.promoDetails.discount,
-        originalPrice: menu.originalPrice,
-        discountedPrice: menu.discountedPrice,
-      },
-    });
-  };
+  if (error) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white px-4">
+        <StatusBar style="dark" />
+        <CustomStatusBar />
+        <Text className="text-red-500 font-urbanist-bold text-lg mb-2">Erreur</Text>
+        <Text className="text-gray-600 font-urbanist-medium text-center">{error}</Text>
+        <TouchableOpacity 
+          className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
+          onPress={() => router.back()}
+        >
+          <Text className="text-white font-urbanist-bold">Retour</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (!offer) {
     return (
@@ -205,7 +194,7 @@ const SpecialOfferDetailScreen: React.FC = () => {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="px-6 py-4">
-          {/* Bannière de l'offre   */}
+          {/* Bannière de l'offre */}
           <Animated.View
             style={[bannerAnimatedStyle]}
             className="relative mb-8"
@@ -213,21 +202,18 @@ const SpecialOfferDetailScreen: React.FC = () => {
             <ImageBackground
               source={offer.background}
               className="w-full rounded-3xl overflow-hidden flex-row items-center justify-between"
-              style={{ height: screenWidth * 0.42 }} // Même ratio que MenuBanner
+              style={{ height: screenWidth * 0.42 }}
             >
-              {/* Contenu texte */}
               <View className="w-1/2 pl-9">
                 <Text
                   className="text-white font-blocklyn-grunge leading-none pt-5"
                   style={{ fontSize: screenWidth * 0.17 }}
-                  accessibilityLabel={offer.percentText}
                 >
                   {offer.percentText}
                 </Text>
                 <Text
                   className="text-white font-blocklyn-grunge -mt-1 leading-tight"
                   style={{ fontSize: screenWidth * 0.038 }}
-                  accessibilityLabel={offer.mainText}
                 >
                   {offer.mainText}
                 </Text>
@@ -239,7 +225,6 @@ const SpecialOfferDetailScreen: React.FC = () => {
                 </Text>
               </View>
 
-              {/* Image du produit */}
               <View className="w-1/2 h-full relative">
                 <Image
                   source={offer.image}
@@ -251,81 +236,29 @@ const SpecialOfferDetailScreen: React.FC = () => {
                     right: -5,
                     bottom: -35,
                   }}
-                  accessibilityLabel={`Image pour ${offer.mainText}`}
                 />
               </View>
             </ImageBackground>
           </Animated.View>
 
-          {/* Contenu animé */}
+          {/* Liste des menus */}
           <Animated.View style={contentAnimatedStyle}>
-            {/* Liste des menus de l'offre */}
             {offerMenus.length > 0 ? (
               <View>
                 {offerMenus.map((item, index) => (
                   <Animated.View
                     key={item.id}
-                    entering={SlideInDown.delay(200 * index)}
+                    entering={ZoomIn.duration(400).delay(index * 100)}
+                    layout={Layout.springify()}
                   >
-                    <TouchableOpacity
-                      onPress={() => handleMenuPress(item)}
-                      className="flex-row items-center p-4 border-b border-gray-100"
-                    >
-                      <Image
-                        source={item.image}
-                        className="w-[100px] h-[100px] rounded-3xl border-[1px] border-slate-100"
-                      />
-                      <View className="ml-4 flex-1">
-                        <Text className="text-lg font-sofia-medium mb-1">
-                          {item.name}
-                        </Text>
-                        {item.description && (
-                          <Text className="text-sm text-gray-500 font-sofia-light mb-1">
-                            {item.description}
-                          </Text>
-                        )}
-                        <View className="flex-row items-center justify-between">
-                          <View>
-                            <Text className="text-lg font-urbanist-regular text-orange-500">
-                              {item.originalPrice} FCFA
-                            </Text>
-                          </View>
-                          <View className="flex-row items-center mt-2">
-                            <TouchableOpacity
-                              className="border-orange-500 border-2 rounded-full p-[9px] py-[7px]"
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                handleDecrement(item);
-                              }}
-                            >
-                              <FontAwesome
-                                name="minus"
-                                size={18}
-                                color="#f97316"
-                              />
-                            </TouchableOpacity>
-                            <Text className="mx-4 text-lg font-sofia-light text-black/70">
-                              {quantities[item.id] || 0}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                handleIncrement(item);
-                              }}
-                            >
-                              <Image
-                                source={require("../../../assets/icons/plus-rounded.png")}
-                                style={{
-                                  width: 38,
-                                  height: 38,
-                                  resizeMode: "contain",
-                                }}
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
+                    <MenuItem
+                      id={item.id}
+                      name={item.name}
+                      price={`${item.price} FCFA`}
+                      image={item.image}
+                      isNew={item.isNew ? "NOUVEAU" : undefined}
+                      description={item.description}
+                    />
                   </Animated.View>
                 ))}
               </View>

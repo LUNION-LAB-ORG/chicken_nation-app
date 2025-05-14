@@ -546,7 +546,8 @@ const Checkout = () => {
         const { date, time, numberOfPeople, tableType } = reservationData;
         
         // Convertir la date en format string (YYYY-MM-DD)
-        const dateString = date instanceof Date ? date.toISOString().split('T')[0] : date;
+        const dateObj = new Date(date);
+        const formattedDate = `${dateObj.getDate()}/${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
         
        
         // Vérifier que toutes les données nécessaires sont présentes
@@ -560,7 +561,7 @@ const Checkout = () => {
         orderId = await createTableOrder(
           orderData.fullname,
           orderData.email,
-          dateString,
+          formattedDate,
           time,
           tableType,
           numberOfPeople,

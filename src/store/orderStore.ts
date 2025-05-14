@@ -359,6 +359,27 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Aucune adresse disponible. Veuillez ajouter une adresse à votre profil.');
       }
 
+      // Récupérer la date et l'heure de retrait depuis le store de type de commande
+      let pickupDate = undefined;
+      let pickupTime = undefined;
+      try {
+        const orderTypeStore = require('./orderTypeStore').default;
+        const { reservationData } = orderTypeStore.getState();
+        if (reservationData?.date) {
+          // Format D/M/YYYY
+          const d = reservationData.date instanceof Date ? reservationData.date : new Date(reservationData.date);
+          pickupDate = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        }
+        if (reservationData?.time) {
+          pickupTime = reservationData.time;
+        }
+      } catch (e) {
+        // ignore si le store n'est pas dispo
+      }
+
+      console.log('PICKUP - Date envoyée au backend:', pickupDate);
+      console.log('PICKUP - Heure envoyée au backend:', pickupTime);
+
       const orderData: any = {
         type: OrderType.PICKUP,
         address: addressObj,
@@ -366,6 +387,8 @@ const useOrderStore = create<OrderState>((set, get) => ({
         email,
         phone,
         items: [],
+        ...(pickupDate && { date: pickupDate }),
+        ...(pickupTime && { time: pickupTime }),
         ...(note && { note }),
         ...(promoCode && { code_promo: promoCode }),
         ...(paymentId && { paiement_id: paymentId })
@@ -438,8 +461,14 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Numéro de téléphone non disponible. Veuillez mettre à jour votre profil.');
       }
 
+      // Fonction utilitaire pour formater la date en D/M/YYYY
+      const formatDateDMY = (input: string | Date): string => {
+        const d = input instanceof Date ? input : new Date(input);
+        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      };
+
       // Formater la date et l'heure
-      const formattedDate = date.split('T')[0];
+      const formattedDate = formatDateDMY(date);
       const formattedTime = time;
 
       const orderData: any = {

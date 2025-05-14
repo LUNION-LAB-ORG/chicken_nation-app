@@ -117,7 +117,7 @@ const ProductSupplements: React.FC<ProductSupplementsProps> = ({
             <View className="flex-1">
               <Text className="font-urbanist-medium">
                 {item.name} {!category.isIncluded && (
-                  <Text className="text-gray-700 font-urbanist-bold">- {item.price} FCFA</Text>
+                  <Text className="text-gray-700 font-urbanist-bold">- {item.price}</Text>
                 )}
               </Text>
             </View>

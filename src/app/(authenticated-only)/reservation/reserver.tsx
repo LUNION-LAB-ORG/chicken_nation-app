@@ -270,12 +270,12 @@ const Reserver = () => {
               {selectedRestaurant ? selectedRestaurant.name : 'Choisir un restaurant'}
             </Text>
             {selectedRestaurant && (
-              <Text style={{ color: '#666', fontSize: 13, marginTop: 2 }}>
-                {selectedRestaurant.address}
+              <Text style={{ color: '#666', fontSize: 10, marginTop: 2 }}>
+                {selectedRestaurant.address.slice(0, 40)}
               </Text>
             )}
           </View>
-          <Text style={{ color: '#FF6B00', fontWeight: 'bold', fontSize: 15 }}>
+          <Text style={{ color: '#FF6B00', fontWeight: 'bold', fontSize: 13 }}>
             {selectedRestaurant ? 'Changer' : 'Sélectionner'}
           </Text>
         </TouchableOpacity>
