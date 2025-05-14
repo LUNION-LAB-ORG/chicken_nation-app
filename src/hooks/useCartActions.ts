@@ -11,7 +11,7 @@ import { extractPriceNumber, formatPrice } from "@/utils/priceHelpers";
  */
 export const useCartActions = (productId: string, menuItem: any, promoDetails: any) => {
   const { addToCart, removeFromCart, items } = useCartStore();
-  const [quantity, setQuantity] = useState(0);
+  const [quantity, setQuantity] = useState(1);
   const [selectedSupplements, setSelectedSupplements] = useState<{
     [key: string]: {
       name: string;
@@ -92,7 +92,7 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
 
   // Gérer la diminution de la quantité
   const handleDecrement = () => {
-    if (quantity > 0) {
+    if (quantity > 1) {
       setQuantity((prev) => prev - 1);
     }
   };
@@ -201,9 +201,8 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
     if (!menuItem) return;
     
     // S'assurer qu'il y a au moins un produit dans le panier
-    if (quantity === 0) {
-      setQuantity(1);
-    }
+    const finalQuantity = quantity > 0 ? quantity : 1;
+    setQuantity(finalQuantity);
 
     // Préparer les suppléments sélectionnés
     const supplements = {};
@@ -218,8 +217,8 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
     const item = {
       id: menuItem.id,
       name: menuItem.name,
-      price: (basePrice * quantity) + supplementsPrice, // Prix de base multiplié par la quantité + suppléments
-      quantity: quantity > 0 ? quantity : 1,
+      price: basePrice, // Prix unitaire de base
+      quantity: finalQuantity,
       image: menuItem.image,
       description: menuItem.description,
       options: supplements,
@@ -227,7 +226,7 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
       category: menuItem.category || "",
       isPromo: promoDetails ? true : false,
       originalPrice: promoDetails ? parseFloat(menuItem.price) : null,
-      supplementsPrice: supplementsPrice // Ajouter le prix des suppléments séparément pour référence
+      supplementsPrice: supplementsPrice // Prix des suppléments par unité
     };
 
     // Désactiver le bouton et montrer l'état de chargement
@@ -242,14 +241,14 @@ export const useCartActions = (productId: string, menuItem: any, promoDetails: a
         await addToCart(item);
         
         // Afficher un message de succès
-        setSuccessMessage("Article mis à jour dans le panier");
+        setSuccessMessage("Menu mis à jour dans le panier");
       } else {
         // Ajouter un nouvel article
         console.log("[ProductId] Ajout d'un nouvel article au panier");
         await addToCart(item);
         
         // Afficher un message de succès
-        setSuccessMessage("Article ajouté au panier");
+        setSuccessMessage("Menu ajouté au panier");
       }
       
       // Afficher le modal de succès

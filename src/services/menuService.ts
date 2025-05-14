@@ -228,7 +228,7 @@ export const getAllMenuCategories = async (): Promise<Category[]> => {
     
     const token = await getAuthToken();
     
-    console.log(`Appel API: ${API_ENDPOINTS.MENU_CATEGORIES}`);
+  
     const response = await api.get(API_ENDPOINTS.MENU_CATEGORIES, {
       headers: {
         Authorization: `Bearer ${token}`
@@ -237,8 +237,7 @@ export const getAllMenuCategories = async (): Promise<Category[]> => {
     
     // Vérifier si les données sont dans un champ 'data'
     const categories = response.data.data || response.data || [];
-    console.log(`Réponse API catégories:`, typeof categories, Array.isArray(categories) ? categories.length : 'non-array');
-    
+   
     // Formater les catégories pour correspondre au type Category
     const formattedCategories = Array.isArray(categories) 
       ? categories.map((category: any) => formatCategoryFromApi(category))

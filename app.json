@@ -1,11 +1,15 @@
 {
   "expo": {
-    "scheme": "acme",
+    "scheme": "unionlab",
     "userInterfaceStyle": "automatic",
     "orientation": "default",
     "web": {
       "output": "static"
     },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/*"
+    ],
     "plugins": [
       "expo-router",
       [
@@ -27,7 +31,15 @@
           ]
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "splash": {
       "image": "./src/assets/icons/logo.png",
@@ -47,11 +59,13 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_API_KEY"
+          "apiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY&language"
         }
       }
     },
@@ -71,9 +85,8 @@
         "origin": false
       },
       "eas": {
-        "projectId": "12d22b15-cc96-4f3a-82d4-219f16de9176"
+        "projectId": "b496e0a6-f622-4865-98e1-18a01e93e69e"
       }
-    },
-    "owner": "ambroisek"
+    }
   }
 }

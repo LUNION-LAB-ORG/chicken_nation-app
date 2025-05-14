@@ -26,8 +26,7 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   accessToken: string | null;
-  refreshToken: string | null;
-  login: (userData: User, accessToken: string, refreshTkn: string) => Promise<void>;
+  login: (userData: User, accessToken: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUserData: (userData: Partial<User>, persistToStorage?: boolean) => void;
 }
@@ -42,7 +41,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshTkn, setRefreshToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Vérifier l'état d'authentification au chargement
@@ -50,7 +48,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkAuthStatus = async () => {
       try {
         setIsLoading(true);
+        console.log('[AUTH] Checking auth status...');
         const authData = await AuthStorage.getAuthData();
+        console.log('[AUTH] Retrieved auth data:', authData);
       
         if (authData?.accessToken) {
           try {
@@ -66,64 +66,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               JSON.parse(atob(parts[0])); // Header
               const payload = JSON.parse(atob(parts[1])); // Payload
+              console.log('[AUTH] Token payload:', payload);
               
               // Vérifier si le token est expiré
               const currentTime = Math.floor(Date.now() / 1000);
               if (payload.exp && payload.exp < currentTime) {
-                console.log('[AUTH] Token expiré, tentative de rafraîchissement...');
-                try {
-                  // Tenter de rafraîchir le token
-                  const refreshResult = await refreshToken(authData.refreshToken);
-                  if (refreshResult && refreshResult.token) {
-                    // Mettre à jour le token dans le stockage
-                    await AuthStorage.storeTokens(refreshResult.token, authData.refreshToken);
-                    setAuthToken(refreshResult.token);
-                    setAccessToken(refreshResult.token);
-                    console.log('[AUTH] Token rafraîchi avec succès');
-                  } else {
-                    throw new Error('Échec du rafraîchissement du token');
-                  }
-                } catch (refreshError) {
-                  console.error('[AUTH] Échec du rafraîchissement du token:', refreshError);
-                  await logout();
-                  return;
-                }
+                console.log('[AUTH] Token expiré, mais on garde la session pour le moment');
+                // On ne déconnecte pas immédiatement, on laisse l'API gérer l'expiration
+              }
+              
+              // Configurer le token pour les futures requêtes
+              setAuthToken(authData.accessToken);
+              setAccessToken(authData.accessToken);
+              
+              // Récupérer les données utilisateur du stockage
+              const userData = await AuthStorage.getUserData();
+              console.log('[AUTH] Retrieved user data:', userData);
+             
+              if (userData) {
+                setUser(userData);
+              } else {
+                setUser(null);
               }
             } catch (decodeError) {
               console.error('[AUTH] Token corrompu, déconnexion...', decodeError);
               await logout();
               return;
             }
-            
-            // Configurer le token pour les futures requêtes
-            setAuthToken(authData.accessToken);
-            setAccessToken(authData.accessToken);
-            setRefreshToken(authData.refreshToken);
-            
-            // Récupérer les données utilisateur du stockage
-            const userData = await AuthStorage.getUserData();
-           
-            if (userData) {
-              // Log complet des données utilisateur pour le débogage
-              console.log('=============================================');
-              console.log('[AUTH] DONNÉES UTILISATEUR COMPLÈTES:');
-              console.log(JSON.stringify(userData, null, 2));
-              console.log(userData);
-           
-              
-              setUser(userData);
-            } else {
-              setUser(null);
-            }
           } catch (tokenError) {
             console.error('[AUTH] Erreur lors de la validation du token:', tokenError);
             await logout();
           }
         } else {
+          console.log('[AUTH] No auth data found');
           setUser(null);
         }
       } catch (error) {
-        console.error('Erreur lors de la vérification de l\'authentification:', error);
+        console.error('[AUTH] Erreur lors de la vérification de l\'authentification:', error);
         setUser(null);
       } finally {
         setIsLoading(false);
@@ -137,23 +116,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Connexion utilisateur
    * @param userData Données utilisateur
    * @param token Token d'accès
-   * @param refreshTkn Token de rafraîchissement
    */
-  const login = async (userData: User, token: string, refreshTkn: string) => {
+  const login = async (userData: User, token: string) => {
     try {
       // Stocker les tokens et les données utilisateur
-      await AuthStorage.storeTokens(token, refreshTkn, userData.phone);
+      await AuthStorage.storeTokens(token, userData.phone);
       await AuthStorage.storeUserData(userData);
       
       // Mettre à jour l'état local
       setUser(userData);
       setAccessToken(token);
-      setRefreshToken(refreshTkn);
       
       // Configurer le token pour les futures requêtes
       setAuthToken(token);
-      
-      
     } catch (error) {
       console.error('Erreur lors de la connexion:', error);
       throw error;
@@ -171,7 +146,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Réinitialiser l'état local
       setUser(null);
       setAccessToken(null);
-      setRefreshToken(null);
       
       // Supprimer le token des futures requêtes
       setAuthToken(null);
@@ -209,7 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user,
     isLoading,
     accessToken,
-    refreshToken: refreshTkn,
     login,
     logout,
     updateUserData,

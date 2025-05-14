@@ -133,7 +133,7 @@ const AuthWithPhone: React.FC = () => {
         />
         <GradientText className="mt-10">Connexion ou inscription</GradientText>
         <View
-          className={`p-4 mt-16 w-full rounded-3xl bg-slate-50 ${
+          className={`p-4 mt-16 mb-12 w-full rounded-3xl bg-slate-50 ${
             state.isFocused ? "border-2 border-orange-500" : ""
           }`}
         >
@@ -158,7 +158,7 @@ const AuthWithPhone: React.FC = () => {
 
         <GradientButton
           onPress={handleLogin}
-          className="w-full mt-6"
+          
           disabled={state.isLoading || !state.phone.trim()}
         >
           {state.isLoading ? "Chargement..." : "Connexion"}

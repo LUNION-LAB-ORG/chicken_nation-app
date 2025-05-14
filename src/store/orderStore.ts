@@ -6,6 +6,10 @@ import useTakeawayStore from "./takeawayStore";
 import useDeliveryStore, { DeliveryStep } from "./deliveryStore";
 import useReservationStore, { ReservationStep } from "./reservationStore";
 import { AuthStorage } from "@/services/storage/auth-storage";
+import useLocationStore from './locationStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getRestaurantById, getAllRestaurants } from "@/services/restaurantService";
+import { formatPhoneForAPI } from "@/utils/formatters";
 
 interface OrderItem {
   dish_id: string;
@@ -26,7 +30,7 @@ interface BaseOrderData {
   time?: string;
   fullname?: string;
   email?: string;
-  address_id: string; // Obligatoire pour tous les types selon le backend
+  address: any; // Objet d'adresse complet
   table_type?: string; // Obligatoire pour les commandes TABLE
   places?: number;    // Optionnel pour les commandes TABLE
 }
@@ -36,9 +40,11 @@ interface OrderState {
   isLoading: boolean;
   currentOrderId: string | null;
   error: string | null;
+  selectedRestaurantId: string | null;
+  setSelectedRestaurantId: (id: string | null) => void;
   
   // Actions
-  fetchOrders: () => Promise<void>;
+  fetchOrders: (forceRefresh?: boolean) => Promise<void>;
   createGenericOrder: (orderData: BaseOrderData, resetStoreFunction?: () => void) => Promise<string | null>;
   createDeliveryOrder: (
     addressId: string, 
@@ -46,14 +52,16 @@ interface OrderState {
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   createTakeawayOrder: (
     fullname: string, 
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   createTableOrder: (
     fullname: string,
@@ -62,50 +70,56 @@ interface OrderState {
     time: string,
     tableType: string,
     numberOfPeople: number,
-    note?: string
+    note?: string,
+    promoCode?: string,
+    paymentId?: string
   ) => Promise<string | null>;
   resetOrderState: () => void;
 }
 
-/**
- * Formate un numéro de téléphone au format +225XXXXXXXX
- * @param phoneNumber Numéro de téléphone à formater
- * @returns Numéro de téléphone formaté
- */
-const formatPhoneNumber = (phoneNumber: string) => {
-  // Nettoyer le numéro (garder uniquement les chiffres)
-  const digits = phoneNumber.replace(/\D/g, '');
-  
-  // Si le numéro commence par 225, le supprimer pour éviter le doublement
-  const cleanPhone = digits.startsWith('225') ? digits.substring(3) : digits;
-  
-  // Ajouter le préfixe +225
-  return `+225${cleanPhone}`;
-};
+// Utilisation de la fonction utilitaire formatPhoneForAPI au lieu d'une implémentation locale
+// Voir @/utils/formatters.ts pour l'implémentation
 
 const useOrderStore = create<OrderState>((set, get) => ({
   orders: [],
   isLoading: false,
   currentOrderId: null,
   error: null,
+  selectedRestaurantId: null,
+  setSelectedRestaurantId: (id) => set({ selectedRestaurantId: id }),
 
   /**
    * Récupère toutes les commandes de l'utilisateur
    */
-  fetchOrders: async () => {
+  fetchOrders: async (forceRefresh: boolean = false) => {
     try {
       set({ isLoading: true, error: null });
       
       // Récupérer l'ID de l'utilisateur connecté
       const userData = await AuthStorage.getUserData();
+      console.log('[ORDER STORE] User Data:', JSON.stringify(userData, null, 2));
+      
       if (!userData?.id) {
+        console.error('[ORDER STORE] Pas d\'ID utilisateur trouvé');
         throw new Error('Utilisateur non connecté');
       }
       
-      // Récupérer les commandes
-      const orders = await getCustomerOrders(userData.id);
+      console.log('[ORDER STORE] Tentative de récupération des commandes pour l\'utilisateur:', userData.id);
+      
+      // Récupérer les commandes avec l'option forceRefresh
+      const orders = await getCustomerOrders(userData.id, forceRefresh);
+      console.log('[ORDER STORE] Commandes reçues:', JSON.stringify(orders, null, 2));
+      
       set({ orders, isLoading: false });
     } catch (error: any) {
+      console.error('[ORDER STORE] Erreur détaillée:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack,
+        headers: error.response?.headers
+      });
+      
       set({ 
         isLoading: false, 
         error: error.message || 'Erreur lors de la récupération des commandes' 
@@ -146,13 +160,21 @@ const useOrderStore = create<OrderState>((set, get) => ({
       }
 
       // Vérifier si une adresse est spécifiée, sinon utiliser la première adresse disponible
-      if (!orderData.address_id && userData.addresses && userData.addresses.length > 0) {
-        orderData.address_id = userData.addresses[0].id;
-      
+      if (!orderData.address && userData.addresses && userData.addresses.length > 0) {
+        // Créer un objet d'adresse complet à partir de la première adresse de l'utilisateur
+        const userAddress = userData.addresses[0];
+        orderData.address = {
+          title: userAddress.title || 'Adresse principale',
+          address: userAddress.address,
+          street: userAddress.street || '',
+          city: userAddress.city || '',
+          longitude: userAddress.longitude || 0,
+          latitude: userAddress.latitude || 0
+        };
       }
       
-      // Vérifier que l'adresse est bien spécifiée (obligatoire pour tous les types selon le backend)
-      if (!orderData.address_id) {
+      // Vérifier que l'adresse est bien spécifiée (obligatoire pour tous les types)
+      if (!orderData.address) {
         throw new Error('Une adresse est requise pour toutes les commandes. Veuillez ajouter une adresse à votre profil.');
       }
       
@@ -181,7 +203,7 @@ const useOrderStore = create<OrderState>((set, get) => ({
       // Fusionner les données de base avec les items du panier et le téléphone formaté
       const finalOrderData = {
         ...orderData,
-        phone: formatPhoneNumber(userData.phone),
+        phone: formatPhoneForAPI(userData.phone),
         items: orderItems,
       };
       
@@ -233,21 +255,35 @@ const useOrderStore = create<OrderState>((set, get) => ({
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => {
+    console.log('=== DELIVERY ORDER ===');
+    console.log('Payment ID:', paymentId);
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     const deliveryStore = useDeliveryStore.getState();
-    
-    const orderData: BaseOrderData = {
+    // Récupérer l'objet d'adresse complet depuis le store de localisation
+    const { addressDetails, coordinates } = useLocationStore.getState();
+    const addressObj = addressDetails && coordinates ? {
+      ...addressDetails,
+      longitude: coordinates.longitude,
+      latitude: coordinates.latitude,
+    } : undefined;
+
+    const orderData: any = {
       type: OrderType.DELIVERY,
-      address_id: addressId,
+      address: addressObj,   // Objet d'adresse complet
       fullname,
       email,
       phone, // Ajouter le champ phone obligatoire
       items: [],
       ...(note && { note }),
       ...(promoCode && { code_promo: promoCode }),
+      ...(paymentId && { paiement_id: paymentId })
     };
     
+    console.log('Order Data:', JSON.stringify(orderData, null, 2));
     return get().createGenericOrder(
       orderData, 
       () => deliveryStore.setStep(DeliveryStep.CONFIRMATION)
@@ -263,8 +299,14 @@ const useOrderStore = create<OrderState>((set, get) => ({
     phone: string, 
     email: string, 
     note?: string,
-    promoCode?: string
+    promoCode?: string,
+    paymentId?: string
   ) => {
+    console.log('=== PICKUP ORDER ===');
+    console.log('Payment ID:', paymentId);
+    console.log('>>> createTakeawayOrder CALLED');
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     try {
       set({ isLoading: true, error: null });
       
@@ -276,27 +318,9 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Le panier est vide');
       }
       
-      // Gérer la date et l'heure de retrait
-      let pickupDate = takeawayStore.selectedDate;
-      let pickupTime = takeawayStore.selectedHour && takeawayStore.selectedMinute ? 
-        `${takeawayStore.selectedHour}:${takeawayStore.selectedMinute}` : null;
-      
-      // Valeurs par défaut si non sélectionnées
-      if (!pickupDate) {
-        const today = new Date();
-        pickupDate = today.toISOString().split('T')[0];
-      }
-      
-      if (!pickupTime) {
-        const now = new Date();
-        now.setHours(now.getHours() + 1);
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        pickupTime = `${hours}:${minutes}`;
-      }
-      
       // Récupérer les données utilisateur pour obtenir une adresse
       const userData = await getCustomerDetails();
+      console.log('PICKUP - Données utilisateur:', userData);
       if (!userData?.id) {
         throw new Error('Utilisateur non connecté ou introuvable');
       }
@@ -306,51 +330,75 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Numéro de téléphone non disponible. Veuillez mettre à jour votre profil.');
       }
 
-      // Trouver une adresse par défaut si disponible
-      let defaultAddressId = null;
-      if (userData?.addresses && userData.addresses.length > 0) {
-        defaultAddressId = userData.addresses[0].id;
+      // Récupérer l'adresse depuis le locationStore (adresse actuelle de l'utilisateur)
+      const { addressDetails, coordinates } = useLocationStore.getState();
+      
+      // Vérifier si nous avons des données de localisation
+      let addressObj = null;
+      
+      if (addressDetails && coordinates) {
+        addressObj = {
+          ...addressDetails,
+          longitude: coordinates.longitude,
+          latitude: coordinates.latitude,
+        };
+      } else if (userData.addresses && userData.addresses.length > 0) {
+        // Utiliser la première adresse de l'utilisateur comme fallback
+        const userAddress = userData.addresses[0];
+        addressObj = {
+          title: userAddress.title || 'Adresse principale',
+          address: userAddress.address,
+          street: userAddress.street || '',
+          city: userAddress.city || '',
+          longitude: userAddress.longitude || 0,
+          latitude: userAddress.latitude || 0
+        };
       }
-      
-      // Vérifier qu'une adresse est disponible
-      if (!defaultAddressId) {
-        throw new Error('Une adresse est requise pour les commandes à emporter. Veuillez ajouter une adresse à votre profil.');
+
+      if (!addressObj) {
+        throw new Error('Aucune adresse disponible. Veuillez ajouter une adresse à votre profil.');
       }
-      
-      // Préparer les items au format minimal attendu par l'API
-      const orderItems = cartStore.items.map(item => ({
-        dish_id: item.id,
-        quantity: item.quantity
-        // Pas de suppléments pour PICKUP
-      }));
-      
-      // Formater le numéro de téléphone
-      const formattedPhone = formatPhoneNumber(userData.phone);
-    
-      
-      // Utiliser la fonction qui reproduit exactement le format de DELIVERY qui fonctionne
-      const response = await createPickupOrderLikeDelivery({
-        address_id: defaultAddressId,
+
+      // Récupérer la date et l'heure de retrait depuis le store de type de commande
+      let pickupDate = undefined;
+      let pickupTime = undefined;
+      try {
+        const orderTypeStore = require('./orderTypeStore').default;
+        const { reservationData } = orderTypeStore.getState();
+        if (reservationData?.date) {
+          // Format D/M/YYYY
+          const d = reservationData.date instanceof Date ? reservationData.date : new Date(reservationData.date);
+          pickupDate = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        }
+        if (reservationData?.time) {
+          pickupTime = reservationData.time;
+        }
+      } catch (e) {
+        // ignore si le store n'est pas dispo
+      }
+
+      console.log('PICKUP - Date envoyée au backend:', pickupDate);
+      console.log('PICKUP - Heure envoyée au backend:', pickupTime);
+
+      const orderData: any = {
+        type: OrderType.PICKUP,
+        address: addressObj,
         fullname,
         email,
-        items: orderItems,
-        phone: formattedPhone,
-        note
-      });
+        phone,
+        items: [],
+        ...(pickupDate && { date: pickupDate }),
+        ...(pickupTime && { time: pickupTime }),
+        ...(note && { note }),
+        ...(promoCode && { code_promo: promoCode }),
+        ...(paymentId && { paiement_id: paymentId })
+      };
       
-      // Mettre à jour l'état
-      set({ 
-        currentOrderId: response.id,
-        isLoading: false 
-      });
-      
-      // Réinitialiser le store spécifique
-      takeawayStore.reset();
-      
-      // Vider le panier après une commande réussie
-      await cartStore.clearCart();
-      
-      return response.id;
+      console.log('Order Data:', JSON.stringify(orderData, null, 2));
+      return get().createGenericOrder(
+        orderData,
+        () => takeawayStore.reset()
+      );
     } catch (error: any) {
       set({ 
         isLoading: false, 
@@ -372,23 +420,37 @@ const useOrderStore = create<OrderState>((set, get) => ({
     tableType: string,
     numberOfPeople: number,
     note?: string,
-    promoCode?: string
-  ) => {
+    promoCode?: string,
+    paymentId?: string
+  ): Promise<string | null> => {
+    console.log('=== TABLE ORDER ===');
+    console.log('Payment ID:', paymentId);
+    const authData = await AuthStorage.getAuthData();
+    console.log('User Access Token:', authData?.accessToken);
     try {
-      
-      
       set({ isLoading: true, error: null });
       
       const reservationStore = useReservationStore.getState();
       const cartStore = useCartStore.getState();
+      const selectedRestaurantId = get().selectedRestaurantId;
       
-    
       // Vérifier si le panier est vide
       if (cartStore.items.length === 0) {
         throw new Error('Le panier est vide');
       }
       
-      // Récupérer les données utilisateur pour obtenir une adresse
+      // Vérifier si un restaurant est sélectionné
+      if (!selectedRestaurantId) {
+        throw new Error('Aucun restaurant sélectionné');
+      }
+      
+      // Récupérer les détails du restaurant
+      const restaurantDetails = await getRestaurantById(selectedRestaurantId);
+      if (!restaurantDetails) {
+        throw new Error('Restaurant introuvable');
+      }
+      
+      // Récupérer les données utilisateur
       const userData = await getCustomerDetails();
       if (!userData?.id) {
         throw new Error('Utilisateur non connecté ou introuvable');
@@ -399,190 +461,47 @@ const useOrderStore = create<OrderState>((set, get) => ({
         throw new Error('Numéro de téléphone non disponible. Veuillez mettre à jour votre profil.');
       }
 
-      // Trouver une adresse par défaut si disponible
-      let defaultAddressId = null;
-      if (userData?.addresses && userData.addresses.length > 0) {
-        defaultAddressId = userData.addresses[0].id;
-     
-      }
+      // Fonction utilitaire pour formater la date en D/M/YYYY
+      const formatDateDMY = (input: string | Date): string => {
+        const d = input instanceof Date ? input : new Date(input);
+        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      };
+
+      // Formater la date et l'heure
+      const formattedDate = formatDateDMY(date);
+      const formattedTime = time;
+
+      const orderData: any = {
+        type: OrderType.TABLE,
+        fullname,
+        email,
+        date: formattedDate,
+        time: formattedTime,
+        items: [],
+        address: {
+          title: restaurantDetails.name,
+          address: restaurantDetails.address,
+          street: restaurantDetails.address.split(',')[0] || '',
+          city: restaurantDetails.address.split(',')[1]?.trim() || '',
+          longitude: restaurantDetails.longitude || 0,
+          latitude: restaurantDetails.latitude || 0,
+          note: '',
+        },
+        restaurant_id: selectedRestaurantId,
+        table_type: tableType,
+        places: numberOfPeople,
+        phone: userData.phone,
+        ...(note && { note }),
+        ...(promoCode && { code_promo: promoCode }),
+        ...(paymentId && { paiement_id: paymentId })
+      };
       
-      // Vérifier qu'une adresse est disponible
-      if (!defaultAddressId) {
-        throw new Error('Une adresse est requise pour les réservations. Veuillez ajouter une adresse à votre profil.');
-      }
-      
-      // Préparer les items au format minimal attendu par l'API
-      const orderItems = cartStore.items.map(item => ({
-        dish_id: item.id,
-        quantity: item.quantity
-        // Pas de suppléments pour TABLE
-      }));
-      
-      // Formater le numéro de téléphone
-      const formattedPhone = formatPhoneNumber(userData.phone);
-      
-      // Essayer une approche différente : utiliser directement createOrder avec le type TABLE
-      try {
-     
-        
-        // Vérifier et formater correctement les données pour l'API
-        if (!date || !time || !tableType) {
-          console.error("Données de réservation incomplètes:", { date, time, tableType });
-          throw new Error("Les informations de réservation sont incomplètes. Veuillez renseigner la date, l'heure et le type de table.");
-        }
-        
-        // Vérifier que le type de table est valide
-        const validTableTypes = ["TABLE_SQUARE", "TABLE_RECTANGLE", "TABLE_ROUND"];
-        if (!validTableTypes.includes(tableType)) {
-          console.error("Type de table invalide:", tableType);
-          throw new Error(`Type de table invalide. Les valeurs acceptées sont: ${validTableTypes.join(", ")}`);
-        }
-        
-        // Formater la date et l'heure pour l'API
-        let formattedDate = date;
-        let formattedTime = time;
-        
-        // Formater la date au format JJ/MM/AAAA si elle n'est pas déjà dans ce format
-        if (date && !date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-          try {
-            const dateObj = new Date(date);
-            formattedDate = dateObj.toLocaleDateString('fr-FR', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric'
-            });
-          } catch (error) {
-            console.error("Erreur lors du formatage de la date:", error);
-            throw new Error("Format de date invalide. Utilisez le format JJ/MM/AAAA.");
-          }
-        }
-        
-        // Formater l'heure au format HH:mm si elle n'est pas déjà dans ce format
-        if (time && !time.match(/^\d{2}:\d{2}$/)) {
-          try {
-            // Extraire les heures et minutes si possible
-            const match = time.match(/(\d{1,2})[:\s](\d{2})/);
-            if (match) {
-              const hours = match[1].padStart(2, '0');
-              const minutes = match[2];
-              formattedTime = `${hours}:${minutes}`;
-            } else {
-              throw new Error("Format d'heure non reconnu");
-            }
-          } catch (error) {
-            console.error("Erreur lors du formatage de l'heure:", error);
-            throw new Error("Format d'heure invalide. Utilisez le format HH:mm.");
-          }
-        }
-        
-        const orderData: BaseOrderData = {
-          type: OrderType.TABLE,
-          fullname,
-          email,
-          date: formattedDate,
-          time: formattedTime,
-          items: orderItems,
-          address_id: defaultAddressId,
-          table_type: tableType,
-          places: numberOfPeople,
-          phone: formattedPhone,
-          ...(note && { note })
-        };
-        
-  
-        
-        const response = await createOrder(orderData);
-        
- 
-        
-        // Mettre à jour l'état
-        set({ 
-          currentOrderId: response.id,
-          isLoading: false 
-        });
-        
-        // Réinitialiser le store spécifique
-        reservationStore.completeReservation();
-        
-        // Vider le panier après une commande réussie
-        await cartStore.clearCart();
-        
-        return response.id;
-      } catch (directError: any) {
-       
-        
-        // Formater la date et l'heure pour l'API
-        let formattedDate = date;
-        let formattedTime = time;
-        
-        // Formater la date au format JJ/MM/AAAA
-        if (date && !date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-          try {
-            const dateObj = new Date(date);
-            formattedDate = dateObj.toLocaleDateString('fr-FR', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric'
-            });
-          } catch (error) {
-            console.error("Erreur lors du formatage de la date dans le bloc catch:", error);
-            // Continuer avec la valeur originale
-          }
-        }
-        
-        // Formater l'heure au format HH:mm
-        if (time && !time.match(/^\d{2}:\d{2}$/)) {
-          try {
-            const match = time.match(/(\d{1,2})[:\s](\d{2})/);
-            if (match) {
-              const hours = match[1].padStart(2, '0');
-              const minutes = match[2];
-              formattedTime = `${hours}:${minutes}`;
-            }
-          } catch (error) {
-            console.error("Erreur lors du formatage de l'heure dans le bloc catch:", error);
-            // Continuer avec la valeur originale
-          }
-        }
-        
-        // Préparer les données de commande avec les formats corrects
-        const orderData = {
-          address_id: defaultAddressId,
-          fullname,
-          email,
-          items: orderItems,
-          phone: formattedPhone,
-          date: formattedDate,
-          time: formattedTime,
-          table_type: tableType,
-          places: numberOfPeople,
-          note
-        };
-        
-       
-        
-        // Utiliser la fonction qui reproduit exactement le format de DELIVERY qui fonctionne
-        const response = await createTableOrderLikeDelivery(orderData);
-        
-      
-     
-        
-        // Mettre à jour l'état
-        set({ 
-          currentOrderId: response.id,
-          isLoading: false 
-        });
-        
-        // Réinitialiser le store spécifique
-        reservationStore.completeReservation();
-        
-        // Vider le panier après une commande réussie
-        await cartStore.clearCart();
-        
-        return response.id;
-      }
+      console.log('Order Data:', JSON.stringify(orderData, null, 2));
+      return get().createGenericOrder(
+        orderData,
+        () => reservationStore.completeReservation()
+      );
     } catch (error: any) {
-      console.error("Erreur lors de la création de la commande TABLE:", error);
       set({ 
         isLoading: false, 
         error: error.message || 'Erreur lors de la création de la commande' 

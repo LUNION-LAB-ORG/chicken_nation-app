@@ -87,10 +87,7 @@ export const addUserAddress = async (addressData: Address): Promise<Address | nu
     const user = await getUserFromStorage();
     if (user && user.id && !addressData.customer_id) {
       addressData.customer_id = user.id;
-    }
-    
-    // Log des données envoyées
-    console.log(`Ajout d'une adresse pour l'utilisateur ${addressData.customer_id}`);
+    } 
     console.log(`Données d'adresse envoyées:`, JSON.stringify(addressData, null, 2));
     
     const response = await api.post("/v1/addresses", addressData);
@@ -130,7 +127,7 @@ export const updateUserAddress = async (
         addressData.address = "Adresse modifiée";
       }
       
-      console.log("Adresse automatiquement corrigée lors de la mise à jour:", addressData.address);
+     
     }
     
     // Récupérer l'utilisateur pour l'ID
@@ -150,13 +147,7 @@ export const updateUserAddress = async (
       // Ne pas inclure customer_id dans la mise à jour
     };
     
-    // Log des données envoyées
-    console.log(`Mise à jour de l'adresse ${addressId} (type: ${typeof addressId}) pour l'utilisateur ${user.id}`);
-    console.log(`Données d'adresse envoyées pour la mise à jour:`, JSON.stringify(simplifiedData, null, 2));
-    
-    // Utiliser PATCH avec les données simplifiées
-    // D'après les mémoires, l'endpoint correct est /v1/addresses/{addressId}
-    console.log(`Endpoint utilisé: /v1/addresses/${addressId}`);
+  
     const response = await api.patch(`/v1/addresses/${addressId}`, simplifiedData);
     console.log("Réponse du serveur:", JSON.stringify(response.data, null, 2));
     return response.data;
@@ -178,7 +169,7 @@ export const updateUserAddress = async (
             longitude: addressData.longitude
           };
           
-          console.log("Données alternatives:", JSON.stringify(alternativeData, null, 2));
+      
           const alternativeResponse = await api.patch(`/v1/addresses/${addressId}`, alternativeData);
           console.log("Réponse alternative du serveur:", JSON.stringify(alternativeResponse.data, null, 2));
           return alternativeResponse.data;
@@ -203,8 +194,7 @@ export const deleteUserAddress = async (addressId: string | number): Promise<boo
       console.error("ID d'adresse invalide pour la suppression");
       return false;
     }
-    
-    console.log(`Suppression de l'adresse ${addressId} (type: ${typeof addressId})`);
+   
     await api.delete(`/v1/addresses/${addressId}`);
     console.log(`Adresse ${addressId} supprimée avec succès`);
     return true;

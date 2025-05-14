@@ -6,7 +6,6 @@ interface GradientButtonProps {
   colors?: readonly [string, string, ...string[]];
   start?: { x: number; y: number };
   end?: { x: number; y: number };
-  className?: string;
   style?: ViewStyle;
   textStyle?: TextStyle;
   onPress?: () => void;
@@ -19,7 +18,6 @@ const GradientButton: React.FC<GradientButtonProps> = ({
   start = { x: 0, y: 0 },
   end = { x: 1, y: 0 },
   style,
-  className,
   textStyle,
   onPress,
   children,
@@ -29,19 +27,31 @@ const GradientButton: React.FC<GradientButtonProps> = ({
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      className={className}
-      style={style}
+      style={[{ width: "100%" }, style]}
     >
       <LinearGradient
         colors={colors}
         start={start}
         end={end}
-        className="w-full rounded-3xl py-5 px-6"
-        style={{ borderRadius: 20 }}
+        style={{
+          width: "100%",
+          paddingVertical: 18,
+          paddingHorizontal: 24,
+          borderRadius: 22,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
         <Text
-          className="text-white text-center font-urbanist-medium text-base"
-          style={textStyle}
+          style={[
+            {
+              color: "#fff",
+              fontSize: 16,
+              textAlign: "center",
+              fontFamily: "Urbanist-Medium",
+            },
+            textStyle,
+          ]}
         >
           {children}
         </Text>

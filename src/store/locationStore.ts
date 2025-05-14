@@ -59,11 +59,24 @@ const useLocationStore = create<LocationState>()(
       
       // Définir les coordonnées géographiques
       setCoordinates: (coords) => {
+        const { locationType } = get();
+        // Ne pas mettre à jour les coordonnées si une adresse manuelle est sélectionnée
+        if (locationType === "manual") {
+          console.log("Mise à jour des coordonnées ignorée car une adresse manuelle est sélectionnée");
+          return;
+        }
         set({ coordinates: coords });
       },
       
       // Définir les détails d'adresse
       setAddressDetails: (details) => {
+        const { locationType } = get();
+        // Ne pas mettre à jour l'adresse si une adresse manuelle est sélectionnée
+        if (locationType === "manual") {
+          console.log("Mise à jour de l'adresse ignorée car une adresse manuelle est sélectionnée");
+          return;
+        }
+
         // Formater l'adresse si nécessaire
         if (!details.formattedAddress || details.formattedAddress.trim() === "") {
           const parts = [];

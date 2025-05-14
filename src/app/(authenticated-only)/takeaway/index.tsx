@@ -1,5 +1,5 @@
-import { View, Text, Image } from "react-native";
-import React, { useState } from "react";
+import { View, Text, Image, TouchableOpacity } from "react-native";
+import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import GradientButton from "@/components/ui/GradientButton";
@@ -9,6 +9,9 @@ import DynamicHeader from "@/components/home/DynamicHeader";
 import TimePicker from "@/components/reservation/TimePickerProps";
 import CalendarPicker from "@/components/reservation/CalendarPicker";
 import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
+import RestaurantSelector from '@/components/checkout/RestaurantSelector';
+import useOrderStore from '@/store/orderStore';
+import { getRestaurantById } from '@/services/restaurantService';
 
 type Step = "initial" | "schedule";
 
@@ -16,9 +19,20 @@ const TakeawayScreen = () => {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<Step>("initial");
   const { setActiveType, setReservationData } = useOrderTypeStore();
+  const { selectedRestaurantId } = useOrderStore();
+  const [showRestaurantSelector, setShowRestaurantSelector] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null);
 
   const [selectedHour, setSelectedHour] = useState("11");
   const [selectedMinute, setSelectedMinute] = useState("30");
+
+  useEffect(() => {
+    if (selectedRestaurantId) {
+      getRestaurantById(selectedRestaurantId).then(setSelectedRestaurant);
+    } else {
+      setSelectedRestaurant(null);
+    }
+  }, [selectedRestaurantId]);
 
   const handleNext = () => {
     if (currentStep === "initial") {
@@ -142,9 +156,49 @@ const TakeawayScreen = () => {
           </View>
           {renderScheduleStep()}
 
-          <GradientButton onPress={handleNext} className="w-full mt-6">
-        Suivant
-      </GradientButton>
+          {/* Sélection du restaurant */}
+          <View style={{ marginHorizontal: 16, marginBottom: 16 }}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#F3F4F6',
+                borderRadius: 12,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: selectedRestaurant ? '#FF6B00' : '#E5E7EB',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+              onPress={() => setShowRestaurantSelector(true)}
+            >
+              <View>
+                <Text style={{ fontWeight: 'bold', color: '#222', fontSize: 16 }}>
+                  {selectedRestaurant ? selectedRestaurant.name : 'Choisir un restaurant'}
+                </Text>
+                {selectedRestaurant && (
+                  <Text style={{ color: '#666', fontSize: 10, marginTop: 2 }}>
+                    {selectedRestaurant.address.slice(0, 40)}
+                  </Text>
+                )}
+              </View>
+              <Text style={{ color: '#FF6B00', fontWeight: 'bold', fontSize: 13 }}>
+                {selectedRestaurant ? 'Changer' : 'Sélectionner'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <RestaurantSelector
+            visible={showRestaurantSelector}
+            onClose={() => setShowRestaurantSelector(false)}
+          />
+
+          <GradientButton 
+            onPress={handleNext} 
+            className="w-full mt-6"
+            disabled={currentStep === 'schedule' && !selectedRestaurant}
+          >
+            Suivant
+          </GradientButton>
         </View>
       )}
     </View>

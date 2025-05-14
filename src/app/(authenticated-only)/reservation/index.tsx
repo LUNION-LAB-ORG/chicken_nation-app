@@ -1,6 +1,5 @@
 import { View, Text, Image } from "react-native";
-import React from "react";
-import BackButton from "@/components/ui/BackButton";
+import React from "react"; 
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import BackButtonTwo from "@/components/ui/BackButtonTwo";

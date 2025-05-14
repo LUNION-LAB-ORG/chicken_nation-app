@@ -63,8 +63,8 @@ const GuestAuth: React.FC = () => {
 
  
   const handleSkip = (): void => {
+    // Marquer l'authentification comme terminée
     completeAuth();
-    
     
     if (isFirstLaunch) {
       router.replace("/onboarding/welcome");

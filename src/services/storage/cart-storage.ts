@@ -37,7 +37,7 @@ export const CartStorage = {
       const cart = await getData(STORAGE_KEYS.CART.ITEMS);
       return cart || { items: [], total: 0 };
     } catch (error) {
-      console.error('Error retrieving cart:', error);
+      console.error('Erreur lors de la récupération du panier:', error);
       return { items: [], total: 0 };
     }
   },
@@ -49,10 +49,10 @@ export const CartStorage = {
   async saveCart(cart: Cart): Promise<void> {
     try {
       await storeData(STORAGE_KEYS.CART.ITEMS, cart);
-      console.log('Cart saved successfully');
+      console.log('Panier enregistré avec succès');
     } catch (error) {
-      console.error('Error saving cart:', error);
-      throw new Error('Failed to save cart');
+      console.error('Erreur lors de l\'enregistrement du panier:', error);
+      throw new Error('Erreur lors de l\'enregistrement du panier');
     }
   },
 
@@ -83,8 +83,8 @@ export const CartStorage = {
       
       return cart;
     } catch (error) {
-      console.error('Error adding item to cart:', error);
-      throw new Error('Failed to add item to cart');
+      console.error('Erreur lors de l\'ajout d\'un produit au panier:', error);
+      throw new Error('Erreur lors de l\'ajout d\'un produit au panier');
     }
   },
 
@@ -107,8 +107,8 @@ export const CartStorage = {
       
       return cart;
     } catch (error) {
-      console.error('Error removing item from cart:', error);
-      throw new Error('Failed to remove item from cart');
+      console.error('Erreur lors de la suppression d\'un produit du panier:', error);
+      throw new Error('Erreur lors de la suppression d\'un produit du panier');
     }
   },
 
@@ -142,8 +142,8 @@ export const CartStorage = {
       
       return cart;
     } catch (error) {
-      console.error('Error updating item quantity:', error);
-      throw new Error('Failed to update item quantity');
+      console.error('Erreur lors de la mise à jour de la quantité:', error);
+      throw new Error('Erreur lors de la mise à jour de la quantité');
     }
   },
 
@@ -153,10 +153,10 @@ export const CartStorage = {
   async clearCart(): Promise<void> {
     try {
       await removeData(STORAGE_KEYS.CART.ITEMS);
-      console.log('Cart cleared successfully');
+      console.log('Panier vidé avec succès');
     } catch (error) {
-      console.error('Error clearing cart:', error);
-      throw new Error('Failed to clear cart');
+      console.error('Erreur lors de la vidange du panier:', error);
+      throw new Error('Erreur lors de la vidange du panier');
     }
   },
 

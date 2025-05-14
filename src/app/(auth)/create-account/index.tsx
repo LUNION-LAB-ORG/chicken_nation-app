@@ -178,113 +178,110 @@ const CreateAccount = () => {
         // Extraire le nom du fichier de l'URI
         const uriParts = formData.image.split('/');
         const fileName = uriParts[uriParts.length - 1];
-        
         // Déterminer le type MIME
         const fileType = fileName.split('.').pop()?.toLowerCase() === 'png' 
           ? 'image/png' 
           : 'image/jpeg';
-        
         // Ajouter l'image au FormData
         formDataToSend.append('image', {
           uri: formData.image,
           name: fileName,
           type: fileType,
         } as any);
-        
         hasNewImage = true;
         hasData = true;
       }
-      
+      // Ajout du numéro de téléphone
+      if (apiPhone && apiPhone.trim()) {
+        formDataToSend.append('phone', apiPhone.trim());
+        console.log('Numéro de téléphone envoyé:', apiPhone.trim());
+      }
       if (!hasData) {
         setErrorMessage("Aucune modification à enregistrer");
         setShowErrorModal(true);
         setIsLoading(false);
         return;
       }
-      
-      // 5. Envoi des données au serveur
-      console.log('Envoi de la mise à jour du profil avec FormData');
-      
-      // Afficher le contenu du FormData pour débogage
-      console.log('FormData contenu:');
-      // @ts-ignore
-      for (let [key, value] of formDataToSend._parts || []) {
-        if (key === 'image') {
-          console.log('- image:', value.name, value.type);
-        } else {
-          console.log(`- ${key}:`, value);
+      // Log du contenu du FormData
+      if ((formDataToSend as any)._parts) {
+        for (let [key, value] of (formDataToSend as any)._parts) {
+          console.log('FormData part:', key, value);
         }
       }
-      
-      const response = await api.patch('/v1/customer', formDataToSend, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // 30 secondes
-      });
-      
-      console.log('Réponse de mise à jour du profil:', response.data);
-      
-      // Déterminer l'URL de l'image à utiliser
-      let imageUrl = null;
-      
-      // 1. Utiliser l'image de la réponse API si disponible
-      if (response.data && response.data.image) {
-        imageUrl = formatImageUrl(response.data.image);
-        console.log('Image mise à jour depuis la réponse API:', imageUrl);
-      } 
-      // 2. Sinon, si une nouvelle image a été sélectionnée, l'utiliser
-      else if (hasNewImage && formData.image) {
-        imageUrl = formData.image; // Les images locales n'ont pas besoin d'être formatées
-        console.log('Utilisation de la nouvelle image locale:', imageUrl);
-      }
-      
-      // 6. Mise à jour des données utilisateur locales
-      const updatedUserData = {
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        birth_day: formData.birthDate ? format(formData.birthDate, 'dd/MM/yyyy') : null,
-        email: formData.email || null,
-        phone: apiPhone, // Conserver le numéro de téléphone actuel
-        image: imageUrl,
-      };
-      
-      // Mettre à jour le contexte d'authentification
-      updateUserData(updatedUserData);
-      
-      setSuccessMessage("Profil créé avec succès !");
-      
-      // Recharger les données utilisateur depuis l'API pour s'assurer d'avoir les données les plus récentes
+      // Envoi avec fetch natif (PAS Axios)
+      const apiUrl = `${api.defaults.baseURL}/v1/customer`;
+      console.log('API URL utilisée pour PATCH:', apiUrl);
       try {
-        const freshUserData = await getCustomerDetails();
-        if (freshUserData) {
-          updateUserData(freshUserData);
-          console.log('Données utilisateur rechargées depuis l\'API');
+        const fetchResponse = await fetch(apiUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            // PAS de Content-Type ici !
+          },
+          body: formDataToSend,
+        });
+        const data = await fetchResponse.json();
+        console.log('Réponse fetch natif:', data);
+        if (fetchResponse.ok) {
+          setSuccessMessage('Profil créé avec succès !');
+          updateUserData({
+            ...formData,
+            ...data,
+            phone: data.phone || apiPhone,
+            image: data.image ? formatImageUrl(data.image) : formData.image,
+          });
+          // Recharger les données utilisateur depuis l'API pour s'assurer d'avoir les données les plus récentes
+          try {
+            const freshUserData = await getCustomerDetails();
+            if (freshUserData) {
+              updateUserData(freshUserData);
+              console.log('Données utilisateur rechargées depuis l\'API');
+            }
+          } catch (refreshError) {
+            console.error('Erreur lors du rechargement des données utilisateur:', refreshError);
+          }
+          completeOnboarding();
+          router.replace('/onboarding/welcome');
+        } else {
+          setErrorMessage('Erreur lors de la création du profil : ' + (data?.message || fetchResponse.status));
+          setShowErrorModal(true);
         }
-      } catch (refreshError) {
-        console.error('Erreur lors du rechargement des données utilisateur:', refreshError);
+      } catch (fetchErr) {
+        console.error('Erreur lors de la création du profil (fetch natif):', fetchErr);
+        setErrorMessage('Erreur réseau (fetch natif) : ' + (fetchErr.message || ''));
+        setShowErrorModal(true);
       }
-      
-      // 7. Finalisation du processus d'onboarding
-      completeOnboarding();
-      
-      // 8. Redirection vers l'application principale
-      router.replace('/(tabs-user)/');
+      setIsLoading(false);
+      return;
     } catch (error: any) {
       console.error('Erreur lors de la mise à jour du profil:', error);
+      console.error('Détails de l\'erreur:', error.response);
       
-      // Afficher plus de détails sur l'erreur
+      // Gestion des erreurs avec des messages conviviaux
       if (error.response) {
-        console.error('Détails de l\'erreur:', {
-          status: error.response.status,
-          data: error.response.data,
-          headers: error.response.headers
-        });
+        switch (error.response.status) {
+          case 409:
+            setErrorMessage('Cette adresse email est déjà utilisée par un autre compte');
+            break;
+          case 400:
+            setErrorMessage('Les informations fournies ne sont pas valides');
+            break;
+          case 401:
+            setErrorMessage('Votre session a expiré, veuillez vous reconnecter');
+            break;
+          case 413:
+            setErrorMessage('L\'image est trop volumineuse, veuillez en choisir une plus légère');
+            break;
+          default:
+            setErrorMessage('Une erreur est survenue lors de la mise à jour de votre profil');
+        }
+      } else if (error.request) {
+        setErrorMessage('Impossible de contacter le serveur, veuillez vérifier votre connexion internet');
+      } else {
+        setErrorMessage('Une erreur inattendue est survenue');
       }
       
-      setErrorMessage(error.message || "Erreur lors de la mise à jour du profil");
       setShowErrorModal(true);
     } finally {
       setIsLoading(false);
@@ -371,6 +368,7 @@ const CreateAccount = () => {
             />
             <MaterialIcons name="date-range" size={24} color="#334155" />
           </TouchableOpacity>
+ 
 
           {/* Email */}
           <View className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-3">

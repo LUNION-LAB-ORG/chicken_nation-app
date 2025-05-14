@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity } from "react-native";
 import { PaymentMethod, paymentMethods } from "./types";
 import { useAuth } from "@/app/context/AuthContext";
 import { AuthStorage } from "@/services/storage/auth-storage";
+import { getCustomerDetails } from "@/services/api/customer";
 
 type SuccessStepProps = {
   phoneNumber: string;
@@ -22,21 +23,27 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
   // Récupérer les informations de l'utilisateur connecté
   const { user } = useAuth();
   const [authPhone, setAuthPhone] = useState<string | null>(null);
+  const [customerData, setCustomerData] = useState<any>(null);
   
-  // Charger le numéro de téléphone depuis le stockage
+  // Charger les données client et le numéro de téléphone
   useEffect(() => {
-    const loadPhoneFromStorage = async () => {
+    const loadData = async () => {
       try {
+        // Récupérer les données client
+        const customerDetails = await getCustomerDetails();
+        setCustomerData(customerDetails);
+        
+        // Récupérer le numéro de téléphone depuis le stockage
         const authData = await AuthStorage.getAuthData();
         if (authData?.phone) {
           setAuthPhone(authData.phone);
         }
       } catch (error) {
-        console.error("Erreur lors du chargement du téléphone:", error);
+        console.error("Erreur lors du chargement des données:", error);
       }
     };
     
-    loadPhoneFromStorage();
+    loadData();
   }, []);
   
   const currentDate = new Date();
@@ -46,30 +53,35 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
     .substring(2, 8)
     .toUpperCase();
 
-  // Formater le nom complet de l'utilisateur
-  const fullName = user && (user.first_name || user.last_name) 
-    ? `${user.first_name || ''} ${user.last_name || ''}`.trim() 
-    : 'Utilisateur';
+  // Formater le nom complet de l'utilisateur en utilisant les données client
+  const fullName = customerData 
+    ? `${customerData.first_name || ''} ${customerData.last_name || ''}`.trim() 
+    : user 
+      ? `${user.first_name || ''} ${user.last_name || ''}`.trim()
+      : 'Utilisateur';
     
-  // Utiliser l'email de l'utilisateur ou un texte par défaut
-  const email = user?.email || 'Non renseigné';
+  // Utiliser l'email des données client ou de l'utilisateur
+  const email = customerData?.email || user?.email || 'Non renseigné';
   
   // Utiliser le numéro de téléphone dans cet ordre de priorité:
   // 1. Numéro stocké dans AuthStorage
-  // 2. Numéro fourni en prop (saisi pendant le checkout)
-  // 3. Valeur par défaut
-  const phone = authPhone || phoneNumber || 'Non renseigné';
+  // 2. Numéro des données client
+  // 3. Numéro fourni en prop (saisi pendant le checkout)
+  // 4. Valeur par défaut
+  const phone = authPhone || customerData?.phone || phoneNumber || 'Non renseigné';
 
   // Afficher les informations dans la console pour débogage
   useEffect(() => {
     console.log("Données utilisateur dans SuccessStep:", {
       userId: user?.id,
-      name: user?.first_name + ' ' + user?.last_name,
-      email: user?.email,
+      customerData,
+      name: fullName,
+      email,
       phoneFromStorage: authPhone,
+      phoneFromCustomer: customerData?.phone,
       phoneFromProps: phoneNumber
     });
-  }, [user, phoneNumber, authPhone]);
+  }, [user, customerData, phoneNumber, authPhone]);
 
   return (
     <View className="flex-1 bg-white px-6 pt-8">

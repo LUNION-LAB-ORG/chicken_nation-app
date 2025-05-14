@@ -11,7 +11,7 @@ type ProductInfoProps = {
   isPromo: boolean;
   isAuthenticated: boolean;
   onViewComments: () => void;
-  quantity: number;
+  quantity?: number;
   onIncrement: () => void;
   onDecrement: () => void;
   description: string;

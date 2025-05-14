@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -25,7 +25,9 @@ import SuccessModal from "@/components/ui/SuccessModal";
 import debounce from "lodash/debounce";
 import DynamicHeader from "@/components/home/DynamicHeader";
 import { addUserAddress, Address } from "@/services/api/address";
-import { useAuth } from "@/app/context/AuthContext";
+import { useAuth } from "@/app/context/AuthContext"; 
+import { MapPin } from 'lucide-react-native';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 
 /**
  * Interface pour les données du formulaire d'adresse
@@ -72,10 +74,15 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [addressText, setAddressText] = useState<string>("");
 
   const router = useRouter();
   const { setAddressDetails, setLocationType, clearLocationData, setCoordinates } =
     useLocation();
+
+  const googlePlacesRef = useRef(null);
+  const [searchFocused, setSearchFocused] = useState(false);
 
   /**
    * Met à jour un champ du formulaire
@@ -226,37 +233,23 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
 
     setIsLoading(true);
     try {
-      // Ajout de "Abidjan" à la recherche et limitation de la zone
+      // Utiliser l'API Google Places Autocomplete
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          query + " Abidjan"
-        )}&format=json&limit=5&addressdetails=1&accept-language=fr&viewbox=-4.0415,5.3080,-3.9074,5.4161&bounded=1`,
-        {
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'ChickenNation/1.0',
-          },
-        }
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query + ' Abidjan')}&types=address&language=fr&components=country:ci&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
       );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const text = await response.text();
-      try {
-        const data = JSON.parse(text);
-        // Filtrer les résultats pour ne garder que ceux d'Abidjan
-        const abidjanResults = data.filter((result: any) => 
-          result.display_name.toLowerCase().includes('abidjan')
-        );
-        setSearchResults(abidjanResults);
-      } catch (parseError) {
-        console.error("Erreur de parsing JSON:", text.substring(0, 100));
-        throw parseError;
+      const data = await response.json();
+      if (data.status === 'OK') {
+        // Adapter le format des résultats
+        const results = data.predictions.map((item: any) => ({
+          place_id: item.place_id,
+          display_name: item.description,
+        }));
+        setSearchResults(results);
+      } else {
+        setSearchResults([]);
       }
     } catch (error) {
-      console.error("Erreur lors de la recherche:", error);
+      console.error('Erreur lors de la recherche Google Places:', error);
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -269,28 +262,38 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
 
   const handleSelectLocation = async (result: SearchResult) => {
     try {
-      console.log("Selected location:", result);
-      
-      const coordinates = {
-        latitude: parseFloat(result.lat),
-        longitude: parseFloat(result.lon)
-      };
-
-      //   on  passer directement les coordonnées
-      router.push({
-        pathname: "/location",
-        params: {
-          lat: coordinates.latitude,
-          lon: coordinates.longitude,
-          address: result.display_name
-        }
-      });
+      console.log('Selected location:', result);
+      // Utiliser Google Geocoding pour obtenir les coordonnées
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${result.place_id}&fields=geometry,formatted_address,address_component&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
+      );
+      const data = await response.json();
+      if (data.status === 'OK') {
+        const location = data.result.geometry.location;
+        const formattedAddress = data.result.formatted_address;
+        const coordinates = {
+          latitude: location.lat,
+          longitude: location.lng
+        };
+        setSelectedLocation(coordinates);
+        setAddressText(formattedAddress);
+        router.push({
+          pathname: '/location',
+          params: {
+            lat: coordinates.latitude,
+            lon: coordinates.longitude,
+            address: formattedAddress
+          }
+        });
+      } else {
+        throw new Error('Impossible de récupérer les détails du lieu');
+      }
     } catch (error) {
-      console.error("Erreur lors de la sélection de l'adresse:", error);
+      console.error('Erreur lors de la sélection de l\'adresse:', error);
       Alert.alert(
-        "Erreur",
-        "Une erreur est survenue lors de la sélection de l'adresse",
-        [{ text: "OK" }]
+        'Erreur',
+        'Une erreur est survenue lors de la sélection de l\'adresse',
+        [{ text: 'OK' }]
       );
     }
   };
@@ -313,13 +316,70 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
       >
         <View className="flex-1 bg-white">
           {/* Barre de recherche */}
-          <View className="pr-6 py-4">
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+          <View className="px-6 mt-4">
+            <GooglePlacesAutocomplete
+              ref={googlePlacesRef}
               placeholder="Rechercher une adresse..."
-              className="bg-[#FAFAFA] h-12 rounded-2xl px-4 font-sofia-regular"
-              placeholderTextColor="#9CA3AF"
+              onPress={async (data, details = null) => {
+                if (!details || !details.geometry) return;
+                const location = {
+                  latitude: details.geometry.location.lat,
+                  longitude: details.geometry.location.lng,
+                };
+                setSelectedLocation(location);
+                setAddressText(details.formatted_address);
+                router.push({
+                  pathname: '/location',
+                  params: {
+                    lat: location.latitude,
+                    lon: location.longitude,
+                    address: details.formatted_address
+                  }
+                });
+              }}
+              query={{
+                key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
+                language: 'fr',
+                components: 'country:ci',
+              }}
+              fetchDetails={true}
+              enablePoweredByContainer={false}
+              textInputProps={{
+                onFocus: () => setSearchFocused(true),
+                onBlur: () => setSearchFocused(false),
+              }}
+              styles={{
+                container: { flex: 0, zIndex: 10 },
+                textInputContainer: { backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#eee', marginBottom: 4 },
+                textInput: { height: 44, fontSize: 16, color: '#222' },
+                listView: { backgroundColor: 'white', borderRadius: 8, marginTop: 2 },
+                row: { flexDirection: 'row', alignItems: 'center', padding: 10 },
+                description: { fontSize: 15, color: '#222' },
+                separator: { height: 1, backgroundColor: '#eee' },
+                poweredContainer: { display: 'none' },
+              }}
+              renderLeftButton={() => (
+                <View className="pl-2 justify-center">
+                  <MapPin size={18} color="#666" />
+                </View>
+              )}
+              renderRow={(data) => (
+                <View className="flex-row items-center">
+                  <View className="mr-2">
+                    <MapPin size={16} color="#666" />
+                  </View>
+                  <View>
+                    <Text className="font-semibold text-gray-800">
+                      {data.structured_formatting?.main_text || data.description}
+                    </Text>
+                    <Text className="text-xs text-gray-500">
+                      {data.structured_formatting?.secondary_text || ''}
+                    </Text>
+                  </View>
+                </View>
+              )}
+              listViewDisplayed={searchFocused}
+              keyboardShouldPersistTaps="handled"
             />
           </View>
 
@@ -328,24 +388,32 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
             {isLoading ? (
               <ActivityIndicator size="large" color="#F17922" className="mt-4" />
             ) : (
-              searchResults.map((result) => (
-                <TouchableOpacity
-                  key={result.place_id}
-                  onPress={() => handleSelectLocation(result)}
-                  className="flex-row items-center py-4 border-b border-gray-100"
-                >
-                  <View className="w-8 h-8 mr-3 items-center justify-center">
-                    <Image
-                      source={require("../../../assets/icons/location.png")}
-                      className="w-5 h-5"
-                      style={{ resizeMode: "contain" }}
-                    />
-                  </View>
-                  <Text className="flex-1 text-gray-600 font-sofia-regular">
-                    {result.display_name}
-                  </Text>
-                </TouchableOpacity>
-              ))
+              searchResults.map((result) => {
+                // Découper le display_name en titre et sous-titre
+                const [mainText, ...rest] = result.display_name.split(',');
+                const secondaryText = rest.join(',').trim();
+                return (
+                  <TouchableOpacity
+                    key={result.place_id}
+                    onPress={() => handleSelectLocation(result)}
+                    className="flex-row items-center py-4 border-b border-gray-100"
+                  >
+                    <View className="w-8 h-8 mr-3 items-center justify-center bg-[#F3F4F6] rounded-full">
+                      <MapPin size={18} color="#666" />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-base font-sofia-medium text-gray-900" numberOfLines={1}>
+                        {mainText}
+                      </Text>
+                      {secondaryText ? (
+                        <Text className="text-xs text-gray-500" numberOfLines={1}>
+                          {secondaryText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             )}
           </ScrollView>
         </View>

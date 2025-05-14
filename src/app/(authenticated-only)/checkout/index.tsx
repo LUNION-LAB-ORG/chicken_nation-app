@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, Image, TouchableOpacity, TextInput, Alert } from "react-native";
+import { View, Text, Image, TouchableOpacity, TextInput, Alert, Button, BackHandler, Modal, ActivityIndicator } from "react-native";
+import { WebView } from 'react-native-webview';
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { formatPrice } from '@/utils/priceHelpers';
+import { formatPhoneForAPI } from '@/utils/formatters';
 import useCartStore from "@/store/cartStore";
 import { useLocation } from "@/app/context/LocationContext";
 import { useAuth } from "@/app/context/AuthContext";
@@ -24,9 +27,12 @@ import {
   FailedStep,
   NetworkErrorStep,
 } from "@/components/checkout";
-import { getUserAddresses } from "@/services/api/address";
 import { getCustomerDetails } from "@/services/api/customer";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import useLocationStore from '@/store/locationStore';
+import usePaymentStore from '@/store/paymentStore';
+import * as FileSystem from 'expo-file-system';
+import { createPayment, CreatePaymentDto, getFreePayments } from "@/services/api/payments";
 
 // Étendre le type LocationData pour inclure addressId
 declare module "@/app/context/LocationContext" {
@@ -151,21 +157,27 @@ const Checkout = () => {
     }, 100);
   }, []);
 
+  // États pour le processus de paiement
   const [currentStep, setCurrentStep] = useState<CheckoutStep>("recap");
-  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(
-    null,
-  );
+  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod | null>(null);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [processingOrder, setProcessingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed' | 'cancelled'>('pending');
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState("");
+
+  // États pour la carte de crédit
   const [creditCardData, setCreditCardData] = useState<CreditCardData>({
     cardHolder: "",
     cardNumber: "",
     expiryDate: "",
     cvv: "",
   });
-  const [processingOrder, setProcessingOrder] = useState(false);
-  const [orderError, setOrderError] = useState<string | null>(null);
 
   // Refs pour les inputs de carte de crédit
   const cardHolderRef = useRef<TextInput>(null);
@@ -175,8 +187,11 @@ const Checkout = () => {
 
   // Calcul des totaux
   const calculatedTVA = totalAmount * 0.05;
-  const deliveryFee = 1000;
-  const finalTotal = totalAmount + calculatedTVA + deliveryFee;
+  // N'appliquer les frais de livraison que pour les commandes de type DELIVERY
+  const deliveryFee = activeType === OrderType.DELIVERY ? 1000 : 0;
+  const finalTotal = 100
+
+  // Ne pas vider le panier automatiquement, cela sera fait après la création du paiement
 
   // Surveiller les erreurs du store d'ordres
   useEffect(() => {
@@ -187,12 +202,189 @@ const Checkout = () => {
     }
   }, [error]);
 
+  const { 
+    setProcessing, 
+    setPaymentSuccess, 
+    setPaymentError, 
+    resetPaymentState,
+    setWebViewOpen,
+    setPaymentData
+  } = usePaymentStore();
+
+  const handlePaymentSuccess = async (data: { status: string; transactionId: string }) => {
+   
+    if (data.status === 'SUCCESS') {
+      console.log('Paiement réussi');
+      setPaymentStatus('success');
+      setPaymentId(data.transactionId); // Stocker l'ID de la transaction
+      
+      // Récupérer les paiements gratuits pour obtenir l'ID du paiement
+      try {
+        const freePayments = await getFreePayments();
+        
+        
+        if (freePayments && freePayments.length > 0) {
+          const paymentId = freePayments[0].id;
+          console.log('ID du paiement à utiliser:', paymentId);
+          
+          // Créer la commande avec l'ID du paiement
+          if (activeType === OrderType.DELIVERY) {
+            await createDeliveryOrder(
+              locationData?.addressDetails?.formattedAddress || '',
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.phone || '',
+              user?.email || '',
+              undefined,
+              undefined,
+              paymentId // Passer l'ID du paiement
+            );
+          } else if (activeType === OrderType.PICKUP) {
+            await createTakeawayOrder(
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.phone || '',
+              user?.email || '',
+              undefined,
+              undefined,
+              paymentId // Passer l'ID du paiement
+            );
+          } else if (activeType === OrderType.TABLE) {
+            await createTableOrder(
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.email || '',
+              reservationData?.date?.toISOString() || '',
+              reservationData?.time || '',
+              reservationData?.tableType || '',
+              reservationData?.numberOfPeople || 0,
+              undefined,
+              undefined,
+              paymentId // Passer l'ID du paiement
+            );
+          }
+        } else {
+          console.error('Aucun paiement gratuit trouvé');
+        }
+      } catch (error) {
+        console.error('Erreur lors de la récupération des paiements gratuits:', error);
+      }
+      
+      // Fermer la modal de paiement
+      setShowPaymentModal(false);
+      
+      // Vider le panier
+      clearCart();
+      
+      // Passer à l'étape de succès
+      setCurrentStep("success");
+    } else {
+      console.log('Paiement échoué');
+      setPaymentStatus('failed');
+    }
+  };
+
+  const handlePaymentFailure = (error: any) => {
+    console.error("Échec du paiement:", error);
+    setPaymentStatus('failed');
+    setShowPaymentModal(false);
+    setCurrentStep("failed");
+  };
+
+  const handlePaymentCancelled = () => {
+    setPaymentStatus('cancelled');
+    setShowPaymentModal(false);
+    setCurrentStep("recap");
+  };
+
   const handlePaymentMethodSelect = (method: PaymentMethod) => {
     setSelectedPayment(method);
-    if (method === "card") {
-      setCurrentStep("addcreditcard");
-    } else if (["orange", "momo", "moov", "wave"].includes(method)) {
+    if (method === "orange" || method === "mtn" || method === "moov" || method === "wave") {
       setShowPhoneModal(true);
+    } else if (method === "card") {
+      setCurrentStep("addcreditcard");
+    }
+  };
+
+  const handlePhoneSubmit = async () => {
+    if (!phoneNumber) {
+      Alert.alert("Erreur", "Veuillez entrer un numéro de téléphone");
+      return;
+    }
+
+    try {
+      setIsPaymentProcessing(true);
+      const formattedPhone = formatPhoneForAPI(phoneNumber);
+      
+      // Créer le paiement
+      const paymentData: CreatePaymentDto = {
+        amount: totalAmount,
+        mode: "MOBILE_MONEY",
+        mobile_money_type: selectedPayment?.toUpperCase() as "ORANGE" | "MTN" | "MOOV" | "WAVE",
+        status: "PENDING",
+        reference: `PAY-${Date.now()}`
+      };
+
+      const response = await createPayment(paymentData);
+      setPaymentId(response.id);
+      setPaymentUrl(response.reference);
+      setShowPaymentModal(true);
+      setShowPhoneModal(false);
+    } catch (error) {
+      console.error("Erreur lors de l'initialisation du paiement:", error);
+      Alert.alert("Erreur", "Impossible d'initialiser le paiement. Veuillez réessayer.");
+    } finally {
+      setIsPaymentProcessing(false);
+    }
+  };
+
+  const handleWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      
+      switch (data.type) {
+        case 'payment_success':
+          handlePaymentSuccess(data);
+          break;
+        case 'payment_failure':
+          handlePaymentFailure(data.error);
+          break;
+        case 'payment_cancelled':
+          handlePaymentCancelled();
+          break;
+      }
+    } catch (error) {
+      console.error("Erreur lors du traitement du message WebView:", error);
+    }
+  };
+
+  const handleWebViewNavigation = (navState: any) => {
+   
+
+    // Vérifier si l'URL contient des paramètres de réponse
+    if (navState.url.includes('/payment/thank-you')) {
+      const url = new URL(navState.url);
+      const status = url.searchParams.get('status');
+      const transactionId = url.searchParams.get('transactionId');
+      
+      console.log('Statut de paiement reçu:', {
+        status,
+        transactionId
+      });
+
+      if (status === 'SUCCESS' && transactionId) {
+        console.log('Paiement réussi');
+        setPaymentStatus('success');
+        setIsPaymentProcessing(true);
+        // Attendre un peu pour s'assurer que le backend a bien traité la transaction
+        setTimeout(() => {
+          handlePaymentSuccess({ status: 'SUCCESS', transactionId });
+          setShowPaymentModal(false);
+          setIsPaymentProcessing(false);
+        }, 2000);
+      } else if (status === 'FAILED') {
+        console.log('Paiement échoué');
+        setPaymentStatus('failed');
+        setShowPaymentModal(false);
+        setCurrentStep("failed");
+      }
     }
   };
 
@@ -207,54 +399,28 @@ const Checkout = () => {
   };
 
   const handleContinue = () => {
-  
-    
     if (currentStep === "recap") {
       setCurrentStep("payment");
-      console.log("Passage de l'étape recap à payment");
     } else if (currentStep === "payment") {
       if (selectedPayment === "card") {
         setCurrentStep("addcreditcard");
-        console.log("Passage de l'étape payment à addcreditcard");
+      } else if (["orange", "mtn", "moov", "wave"].includes(selectedPayment || "")) {
+        // Vérifier si un numéro de téléphone a été saisi
+        if (!phoneNumber || phoneNumber.length !== 10) {
+          Alert.alert(
+            "Numéro de téléphone requis",
+            "Veuillez saisir un numéro de téléphone valide pour continuer",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+        setCurrentStep("confirmation");
       } else {
         setCurrentStep("confirmation");
-        console.log("Passage de l'étape payment à confirmation");
       }
     } else if (currentStep === "confirmation") {
-      console.log("Ouverture de la modal de confirmation");
       setShowConfirmationModal(true);
     }
-  };
-
-  const getAddressId = async () => {
-    const userAddresses = await getUserAddresses();
-    let addressId: string | undefined;
-
-    if (!userAddresses || userAddresses.length === 0) {
-      if (locationData && locationData.coordinates) {
-        const { coordinates, addressDetails } = locationData;
-        try {
-          const tempAddress = {
-            title: "Position actuelle",
-            address: addressDetails?.formattedAddress || "Position actuelle",
-            latitude: coordinates.latitude,
-            longitude: coordinates.longitude,
-            street: addressDetails?.address || "",
-            city: addressDetails?.city || "Abidjan"
-          };
-          await AsyncStorage.setItem('temp_delivery_address', JSON.stringify(tempAddress));
-          addressId = "current_location";
-        } catch (error) {
-          console.error("Erreur lors de la création de l'adresse temporaire:", error);
-          throw new Error("Impossible d'utiliser votre position actuelle. Veuillez ajouter une adresse dans votre profil.");
-        }
-      } else {
-        throw new Error("Aucune adresse trouvée et localisation actuelle non disponible. Veuillez ajouter une adresse dans votre profil.");
-      }
-    } else {
-      addressId = userAddresses[0].id?.toString();
-    }
-    return addressId;
   };
 
   const handleProceedPayment = async () => {
@@ -262,221 +428,364 @@ const Checkout = () => {
     setProcessingOrder(true);
     
     try {
+     
+      
       // Vérifier si l'utilisateur est connecté
       if (!user) {
+        console.log('ERREUR: Utilisateur non connecté');
         throw new Error("Vous devez être connecté pour passer une commande");
       }
       
+       
+      
       // Récupérer les données utilisateur depuis l'API
+     
       const userData = await getCustomerDetails();
       
       if (!userData) {
+        console.log('ERREUR: Impossible de récupérer les données utilisateur');
         throw new Error("Impossible de récupérer vos données utilisateur");
       }
+      
+      
+      
+      // Utilisation de la fonction utilitaire formatPhoneForAPI pour un formatage cohérent
+      const formatPhoneNumber = (phoneNum: string) => {
+       
+        
+        if (!phoneNum) {
+          console.log('CHECKOUT: NUMÉRO VIDE, RETOUR VIDE');
+          return '';
+        }
+        
+        // Vérifier si le numéro est trop court
+        const digits = phoneNum.replace(/\D/g, '');
+       
+        
+        if (digits.length < 8) {
+          
+          const defaultNumber = formatPhoneForAPI('01010101');
+          
+          return defaultNumber;
+        }
+        
+        const formattedNumber = formatPhoneForAPI(phoneNum);
+        
+        return formattedNumber;
+      };
       
       // Préparer les données de l'utilisateur
       const fullname = `${userData.first_name} ${userData.last_name}`;
       const email = userData.email || "";
-      const phone = userData.phone || "";
       
-      // Récupérer l'ID de l'adresse
-      const addressId = await getAddressId();
+      // Formater le numéro de téléphone au format +225XXXXXXXX
+      const rawPhone = phoneNumber || userData.phone || "";
+      const phone = formatPhoneNumber(rawPhone);
       
-      if (!addressId) {
-        throw new Error("Adresse invalide. Veuillez ajouter une nouvelle adresse dans votre profil.");
+     
+      // Vérifier que l'adresse est bien sélectionnée
+      const { addressDetails, coordinates } = useLocationStore.getState();
+      if (!addressDetails || !coordinates) {
+        console.log('ERREUR: Adresse non sélectionnée');
+        throw new Error("Veuillez sélectionner une adresse de livraison.");
       }
+      
+      
       
       let orderId: string | null = null;
       
-      // Simuler un délai de traitement du paiement (1 seconde)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Si nous avons déjà un paymentId, l'inclure dans la création de la commande
+      const orderData = {
+        fullname,
+        phone,
+        email,
+        note: "",
+        paymentId: paymentId || undefined
+      };
       
-      // Vérifier les articles du panier
-      const cartStore = useCartStore.getState();
+       
       
-      if (cartStore.items.length === 0) {
-        throw new Error("Votre panier est vide");
-      }
+      // Créer la commande selon le type
       
-      // Créer la commande selon le type (livraison ou à emporter)
       if (activeType === OrderType.DELIVERY) {
-        // Créer une commande de livraison
+        
+        // Utiliser directement le numéro formaté au lieu de laisser le store le reformater
+        // Cela évite les problèmes de double formatage ou de formatage incorrect
+        const formattedPhoneForOrder = phone; // Déjà formaté par notre fonction formatPhoneNumber
+         
+        
         orderId = await createDeliveryOrder(
-          addressId,
-          fullname,
-          phone,
-          email,
-          "" // Note (optionnelle)
+          'selected',
+          orderData.fullname,
+          formattedPhoneForOrder, // Utiliser le numéro déjà formaté
+          orderData.email,
+          orderData.note,
+          orderData.paymentId
         );
       } else if (activeType === OrderType.PICKUP) {
-        // Créer une commande à emporter
+        console.log('TYPE: Commande à emporter');
+        // Utiliser directement le numéro formaté au lieu de laisser le store le reformater
+        const formattedPhoneForOrder = phone; // Déjà formaté par notre fonction formatPhoneNumber
+        console.log('NUMÉRO UTILISÉ POUR LA COMMANDE:', formattedPhoneForOrder);
+        
         orderId = await createTakeawayOrder(
-          fullname,
-          phone,
-          email,
-          "" // Note (optionnelle)
+          orderData.fullname,
+          formattedPhoneForOrder, // Utiliser le numéro déjà formaté
+          orderData.email,
+          orderData.note,
+          orderData.paymentId
         );
-      } else {
-        // Par défaut, créer une commande de livraison
-        orderId = await createDeliveryOrder(
-          addressId,
-          fullname,
-          phone,
-          email,
-          "" // Note (optionnelle)
+      } else if (activeType === OrderType.TABLE) {
+        console.log('TYPE: Réservation de table');
+        
+        // Utiliser directement le numéro formaté au lieu de laisser le store le reformater
+        const formattedPhoneForOrder = phone; // Déjà formaté par notre fonction formatPhoneNumber
+        console.log('NUMÉRO UTILISÉ POUR LA COMMANDE:', formattedPhoneForOrder);
+        
+        // Récupérer les données de réservation depuis le store
+        const { date, time, numberOfPeople, tableType } = reservationData;
+        
+        // Convertir la date en format string (YYYY-MM-DD)
+        const dateObj = new Date(date);
+        const formattedDate = `${dateObj.getDate()}/${dateObj.getMonth() + 1}/${dateObj.getFullYear()}`;
+        
+       
+        // Vérifier que toutes les données nécessaires sont présentes
+        if (!date || !time || !numberOfPeople || !tableType) {
+          throw new Error('Informations de réservation incomplètes');
+        }
+        
+        // Ajouter le numéro de téléphone formaté dans les paramètres de la fonction
+        // Note: createTableOrder n'accepte pas le paramètre phone dans sa signature,
+        // mais nous l'ajoutons ici pour être cohérent avec les autres types de commandes
+        orderId = await createTableOrder(
+          orderData.fullname,
+          orderData.email,
+          formattedDate,
+          time,
+          tableType,
+          numberOfPeople,
+          orderData.note
         );
       }
       
       if (orderId) {
-        setCurrentStep("success");
+       
         
-        // Vider le panier après la commande réussie
+        // Si nous n'avons pas encore de paymentId, créer le paiement maintenant
+        if (!paymentId) {
+         
+          
+          // Vérifier que le panier n'est pas vide
+          if (totalAmount <= 0) {
+            throw new Error('Le panier est vide. Impossible de procéder au paiement.');
+          }
+          
+          // Sauvegarder le montant du panier pour éviter les problèmes si le panier est vidé
+          const cartTotalAmount = totalAmount;
+          
+          // Récupérer le montant total du panier
+          let cartTotal = totalAmount;
+          
+          
+          // Calculer la TVA (5%)
+          const calculatedTVA = Math.round(cartTotal * 0.05);
+          
+          
+          // Ajouter les frais de livraison uniquement pour les commandes de type DELIVERY
+          const deliveryFee = activeType === OrderType.DELIVERY ? 1000 : 0;
+          console.log('FRAIS DE LIVRAISON:', deliveryFee);
+          
+          // Calculer le montant total avec précision
+          const calculatedTotal = cartTotal + calculatedTVA + deliveryFee;
+          console.log('TOTAL CALCULÉ (panier + TVA + livraison):', calculatedTotal);
+          
+          // Arrondir au franc supérieur pour éviter les problèmes de décimales
+          const paymentAmount = Math.ceil(calculatedTotal);
+          console.log('MONTANT FINAL ENVOYÉ AU PAIEMENT:', paymentAmount);
+          
+          const paymentData: CreatePaymentDto = {
+            amount: paymentAmount,
+            order_id: orderId,
+            mode: selectedPayment === "card" ? "CREDIT_CARD" : "MOBILE_MONEY",
+            mobile_money_type: selectedPayment?.toUpperCase() as any,
+            status: "PENDING",
+            reference: `PAY-${Date.now()}`
+          };
+          
+          console.log('DONNÉES PAIEMENT:', JSON.stringify(paymentData, null, 2));
+          
+          try {
+            const paymentResponse = await createPayment(paymentData);
+            console.log('PAIEMENT CRÉÉ:', JSON.stringify(paymentResponse, null, 2));
+            setPaymentId(paymentResponse.id);
+          } catch (error) {
+            console.log('ERREUR PAIEMENT:', error);
+            // On continue quand même car la commande est créée
+          }
+        } else {
+          console.log('PAYMENT ID EXISTANT:', paymentId);
+        }
+        
+        console.log('PROCESSUS TERMINÉ AVEC SUCCÈS');
+        setCurrentStep("success");
+        // Vider le panier seulement après avoir créé le paiement avec succès
         clearCart();
       } else {
+        console.log('ERREUR: Création de la commande échouée');
         throw new Error("Erreur lors de la création de la commande");
       }
     } catch (err: any) {
+      console.log('ERREUR FINALE:', err.message);
       setOrderError(err.message || "Erreur lors du paiement");
       setCurrentStep("failed");
     } finally {
       setProcessingOrder(false);
+      console.log('=== FIN DU PROCESSUS DE PAIEMENT ===');
+    }
+  };
+
+  const handlePaymentModalClose = async () => {
+    console.log('Modal de paiement fermé');
+    if (paymentStatus === 'pending') {
+      console.log('Vérification des paiements libres...');
+      try {
+        // Récupérer les paiements libres
+        const freePayments = await getFreePayments();
+        console.log('Paiements libres récupérés:', freePayments);
+
+        if (freePayments && freePayments.length > 0) {
+          // Prendre le premier paiement libre
+          const successfulPayment = freePayments[0];
+          console.log('Paiement réussi trouvé:', successfulPayment);
+
+          // Mettre à jour le statut du paiement
+          setPaymentStatus('success');
+          setPaymentId(successfulPayment.id);
+          setShowPaymentModal(false);
+
+          // Créer la commande avec l'ID du paiement
+          if (activeType === OrderType.DELIVERY) {
+            await createDeliveryOrder(
+              locationData?.addressDetails?.formattedAddress || '',
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.phone || '',
+              user?.email || '',
+              undefined,
+              successfulPayment.id
+            );
+          } else if (activeType === OrderType.PICKUP) {
+            await createTakeawayOrder(
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.phone || '',
+              user?.email || '',
+              undefined,
+              successfulPayment.id
+            );
+          } else if (activeType === OrderType.TABLE) {
+            await createTableOrder(
+              user?.first_name + ' ' + user?.last_name || '',
+              user?.email || '',
+              reservationData?.date?.toISOString() || '',
+              reservationData?.time || '',
+              reservationData?.tableType || '',
+              reservationData?.numberOfPeople || 0,
+              undefined,
+              successfulPayment.id
+            );
+          }
+
+          // Passer à l'étape de succès
+          setCurrentStep("success");
+        } else {
+          console.log('Aucun paiement libre trouvé');
+          setPaymentStatus('cancelled');
+          setShowPaymentModal(false);
+          setCurrentStep("payment");
+        }
+      } catch (error) {
+        console.error('Erreur lors de la vérification des paiements:', error);
+        setPaymentStatus('cancelled');
+        setShowPaymentModal(false);
+        setCurrentStep("payment");
+      }
     }
   };
 
   const handleConfirmPayment = async () => {
+    console.log('🔄 Début du processus de paiement...');
     setShowConfirmationModal(false);
-    setProcessingOrder(true);
+    setProcessing(true);
     
-   
     try {
-      // Vérifier si l'utilisateur est connecté
-      if (!user) {
-        throw new Error("Vous devez être connecté pour passer une commande");
-      }
-      
-      // Récupérer les données utilisateur depuis l'API
-      const userData = await getCustomerDetails();
-      
-      if (!userData) {
-        throw new Error("Impossible de récupérer vos données utilisateur");
-      }
-      
-      
-      
-      // Préparer les données de l'utilisateur
-      const fullname = `${userData.first_name} ${userData.last_name}`;
-      const email = userData.email || "";
-      const phone = userData.phone || "";
-      
-    
-      
-      // Récupérer l'ID de l'adresse
-      const addressId = await getAddressId();
-      
-      if (!addressId) {
-        throw new Error("Adresse invalide. Veuillez ajouter une nouvelle adresse dans votre profil.");
-      }
-      
-      let orderId: string | null = null;
-      
-      // Simuler un délai de traitement du paiement (1 seconde)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Vérifier les articles du panier
-      const cartStore = useCartStore.getState();
-      
-      console.log("Articles du panier:", cartStore.items.length, "item(s)");
-      
-      if (cartStore.items.length === 0) {
-        throw new Error("Votre panier est vide");
-      }
-      
-      // Vérifier le moyen de paiement sélectionné
       if (!selectedPayment) {
+        console.log('❌ Aucun moyen de paiement sélectionné');
         throw new Error("Veuillez sélectionner un moyen de paiement");
       }
-      
-      console.log("Moyen de paiement sélectionné:", selectedPayment);
-      
-      // Créer la commande selon le type actif
-      switch (activeType) {
-        case OrderType.TABLE:
-          
-          
-          // Utiliser la fonction getFormattedReservationData pour obtenir les données formatées
-          const formattedReservationData = useOrderTypeStore.getState().getFormattedReservationData();
-          
-          if (!formattedReservationData) {
-            throw new Error("Données de réservation incomplètes. Veuillez recommencer la réservation.");
-          }
-          
-         
-          formattedReservationData.note += ` - Paiement par ${selectedPayment}`;
-          
-          // Créer une réservation de table
-          orderId = await createTableOrder(
-            formattedReservationData.fullname,
-            formattedReservationData.email,
-            formattedReservationData.date,
-            formattedReservationData.time,
-            formattedReservationData.tableType,
-            formattedReservationData.numberOfPeople,
-            formattedReservationData.note
-          );
-          break;
-          
-        case OrderType.PICKUP:
-          
-          // Créer une commande à emporter
-          orderId = await createTakeawayOrder(
-            fullname,
-            phone,
-            email,
-            `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
-          );
-          break;
-          
-        case OrderType.DELIVERY:
-        default:
-         
-          // Créer une commande de livraison
-          orderId = await createDeliveryOrder(
-            addressId,
-            fullname,
-            phone,
-            email,
-            `Paiement par ${selectedPayment}` // Ajouter le moyen de paiement dans la note
-          );
-          break;
-      }
-      
-     
-      
-      if (orderId) {
-        // Réinitialiser les données de réservation après une commande réussie
-        if (activeType === OrderType.TABLE) {
-          
-          resetReservationData();
+
+      console.log('Moyen de paiement sélectionné:', selectedPayment);
+
+      if (["orange", "mtn", "moov", "wave"].includes(selectedPayment)) {
+        console.log('💳 Préparation du paiement...');
+        
+        // Récupérer les données utilisateur complètes
+        console.log('Récupération des données utilisateur...');
+        const userData = await getCustomerDetails();
+        
+        if (!userData) {
+          throw new Error("Impossible de récupérer les données utilisateur");
         }
+
+        console.log('Données utilisateur récupérées:', userData);
+
+        // Vérification des données requises
+        if (!userData.email) {
+          throw new Error("Email utilisateur manquant");
+        }
+
+        if (!phoneNumber || phoneNumber.length !== 10) {
+          throw new Error("Numéro de téléphone invalide");
+        }
+
+        const fullName = `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+        if (!fullName) {
+          throw new Error("Nom utilisateur manquant");
+        }
+
+        const paymentAmount = Math.ceil(finalTotal);
+        if (!paymentAmount || paymentAmount <= 0) {
+          throw new Error("Montant invalide");
+        }
+
+        // Log des données avant envoi
+        console.log('Données de paiement:', {
+          amount: paymentAmount,
+          phone: phoneNumber,
+          email: userData.email,
+          name: fullName
+        });
         
-        // Réinitialiser le type de commande à DELIVERY pour la prochaine commande
-        console.log("Réinitialisation du type de commande à DELIVERY pour la prochaine commande");
-        useOrderTypeStore.getState().resetOrderTypeToDefault();
+        // Construction de l'url avec les paramètres
+        const url = `https://chicken-nation-dashboard.vercel.app/payment?amount=${paymentAmount}&phone=${phoneNumber}&email=${encodeURIComponent(userData.email)}&name=${encodeURIComponent(fullName)}`;
         
-        setCurrentStep("success");
+        console.log('URL de paiement:', url);
         
-        // Vider le panier après la commande réussie
-        clearCart();
-      } else {
-        throw new Error("Erreur lors de la création de la commande");
+        // Stocker l'URL et afficher le modal
+        setPaymentUrl(url);
+        setShowPaymentModal(true);
+        return;
       }
+
+      console.log('Création de la commande pour les autres moyens de paiement...');
+      await handleProceedPayment();
     } catch (err: any) {
-      console.error("ERREUR LORS DU PROCESSUS DE PAIEMENT:", err.message);
-      setOrderError(err.message || "Erreur lors du paiement");
+      console.error('❌ ERREUR LORS DU PROCESSUS DE PAIEMENT:', err.message);
+      setPaymentError(err.message || "Erreur lors du paiement");
       setCurrentStep("failed");
+      setSelectedPayment(null);
     } finally {
-      setProcessingOrder(false);
-      
+      setProcessing(false);
+      console.log('Fin du processus de paiement');
     }
   };
 
@@ -531,10 +840,10 @@ const Checkout = () => {
 
   const handleCheckout = (): void => {
     if (user) {
-      console.log("Navigation vers le checkout");
+       
       router.push("/(authenticated-only)/checkout");
     } else {
-      // Si l'utilisateur n'est pas connecté, le rediriger vers la page de connexion
+ 
       Alert.alert(
         "Connexion requise",
         "Veuillez vous connecter pour finaliser votre commande",
@@ -659,7 +968,7 @@ const Checkout = () => {
         <FailedStep
           onRetry={() => {
             setOrderError(null);
-            setCurrentStep("confirmation");
+            setCurrentStep("payment");  
           }}
           onCancel={() => router.push("/(tabs-user)/")}
         />
@@ -704,6 +1013,52 @@ const Checkout = () => {
         onConfirm={handleConfirmPayment}
         isLoading={processingOrder}
       />
+
+      {/* Modal de paiement */}
+      <Modal
+        visible={showPaymentModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handlePaymentModalClose}
+      >
+        <View className="flex-1 bg-black/50">
+          <View className="flex-1 mt-20 bg-white rounded-t-3xl">
+            <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
+              <TouchableOpacity onPress={handlePaymentModalClose}>
+                <Image
+                  source={require("@/assets/icons/arrow-back.png")}
+                  className="w-6 h-6"
+                />
+              </TouchableOpacity>
+              <Text className="text-lg font-sofia-medium">
+                {isPaymentProcessing ? 'Traitement du paiement...' : 'Paiement'}
+              </Text>
+              <View className="w-6" />
+            </View>
+            
+            {isPaymentProcessing ? (
+              <View className="flex-1 items-center justify-center">
+                <ActivityIndicator size="large" color="#FF6B00" />
+                <Text className="mt-4 text-gray-600">Traitement de votre paiement...</Text>
+              </View>
+            ) : (
+              <WebView
+                source={{ uri: paymentUrl }}
+                style={{ flex: 1 }}
+                onNavigationStateChange={handleWebViewNavigation}
+                onError={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.error('Erreur WebView:', nativeEvent);
+                }}
+                onHttpError={(syntheticEvent) => {
+                  const { nativeEvent } = syntheticEvent;
+                  console.error('Erreur HTTP WebView:', nativeEvent);
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

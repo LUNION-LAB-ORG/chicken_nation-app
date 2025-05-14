@@ -162,10 +162,7 @@ export const getCustomerDetails = async (): Promise<CustomerResponse> => {
   }
 };
 
-/**
- * Récupère les données du client depuis le stockage local
- * @returns Données du client stockées localement
- */
+ 
 export const getCustomerFromStorage = async (): Promise<CustomerResponse> => {
   try {
     const userData = await AuthStorage.getUserData();

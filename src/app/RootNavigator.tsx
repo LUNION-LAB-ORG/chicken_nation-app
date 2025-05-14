@@ -12,6 +12,10 @@ export default function RootNavigator() {
   const { isAuthFlow, showOnboarding } = useOnboarding();
 
   useEffect(() => {
+    // Désactiver temporairement les redirections pour débloquer l'utilisateur
+    return;
+
+    /* Code original commenté
     if (isLoading) return; 
 
     // Les chemins autorisés sans authentification
@@ -53,10 +57,15 @@ export default function RootNavigator() {
       );
       
       // Ne rediriger que si le chemin n'est pas autorisé et que nous ne sommes pas dans le flux d'authentification
-      if (!isPathAllowed && !isAuthFlow && !showOnboarding) {
+      // et que nous ne sommes pas en train de naviguer vers ou depuis les écrans d'onboarding
+      const isNavigatingFromOnboarding = pathname === "/onboarding/welcome" || pathname.startsWith("/(tabs-guest)");
+      
+      if (!isPathAllowed && !isAuthFlow && !showOnboarding && !isNavigatingFromOnboarding) {
+        console.log("[RootNavigator] Redirection vers guestAuth depuis", pathname);
         router.replace("/onboarding/guestAuth");
       }
     }
+    */
   }, [isLoading, isAuthenticated, user, pathname, isAuthFlow, showOnboarding]);
 
   return (

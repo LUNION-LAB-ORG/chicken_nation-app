@@ -139,19 +139,10 @@ const Menu: React.FC = () => {
         let menuData;
         try {
           menuData = await getAllMenus();
-          
-          if (menuData && menuData.length > 0) {
-            setMenuItems(menuData);
-            
-            // Si nous avons des menus mais pas de catégories, afficher un message d'erreur
-            if (!categoriesData || categoriesData.length === 0) {
-              setError("Les catégories ne sont pas disponibles pour le moment.");
-            }
-          } else {
-            setError("Aucun menu disponible pour le moment.");
-          }
+          setMenuItems(menuData || []);
         } catch (menuError) {
           setError("Impossible de charger les menus. Veuillez réessayer plus tard.");
+          setMenuItems([]);
         }
         
       } catch (err) {
@@ -239,39 +230,6 @@ const Menu: React.FC = () => {
     );
   }
 
-  if (error) {
-    return (
-      <View className="flex-1 justify-center items-center bg-white px-4">
-        <StatusBar style="dark" />
-        <CustomStatusBar />
-        <Text className="text-red-500 font-urbanist-bold text-lg mb-2">Erreur</Text>
-        <Text className="text-gray-600 font-urbanist-medium text-center">{error}</Text>
-        <TouchableOpacity 
-          className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
-          onPress={() => router.back()}
-        >
-          <Text className="text-white font-urbanist-bold">Retour</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (categories.length === 0) {
-    return (
-      <View className="flex-1 justify-center items-center bg-white px-4">
-        <StatusBar style="dark" />
-        <CustomStatusBar />
-        <Text className="text-gray-600 font-urbanist-medium text-center">Aucune catégorie disponible pour le moment.</Text>
-        <TouchableOpacity 
-          className="mt-6 bg-orange-500 py-3 px-6 rounded-full"
-          onPress={() => router.back()}
-        >
-          <Text className="text-white font-urbanist-bold">Retour</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <View className="flex-1 relative bg-white">
       <StatusBar style="dark" />
@@ -316,7 +274,13 @@ const Menu: React.FC = () => {
             </Animated.View>
           )}
 
-          {filteredMenuItems.length > 0 ? (
+          {error ? (
+            <View className="py-8">
+              <Text className="text-center text-gray-500 font-urbanist-medium">
+                {error}
+              </Text>
+            </View>
+          ) : filteredMenuItems.length > 0 ? (
             filteredMenuItems.map((item, index) => (
               <Animated.View
                 key={item.id}
@@ -334,9 +298,11 @@ const Menu: React.FC = () => {
               </Animated.View>
             ))
           ) : (
-            <Text className="text-gray-500 text-center py-8 font-urbanist-medium">
-              Aucun plat disponible dans cette catégorie
-            </Text>
+            <View className="py-8">
+              <Text className="text-center text-gray-500 font-urbanist-medium">
+                Aucun plat disponible dans cette catégorie
+              </Text>
+            </View>
           )}
         </Animated.View>
       </AnimatedScrollView>
