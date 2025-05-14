@@ -74,7 +74,8 @@
         "image": "./src/assets/icons/logo.png",
         "resizeMode": "contain",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "bundleIdentifier": "com.chickennation.app"
     },
     "name": "chicken-nation",
     "slug": "chicken-nation",

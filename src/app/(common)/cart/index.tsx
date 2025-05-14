@@ -464,7 +464,8 @@ const Cart: React.FC = () => {
                   placeholder="Code Promo"
                   value={promoCode}
                   onChangeText={setPromoCode}
-                  className="flex-1 font-sofia-regular text-gray-500"
+                  className="flex-1 font-sofia-regular text-gray-500" 
+                  placeholderTextColor="#6b7280"
                   editable={!codeApplied}
                   accessibilityLabel="Entrez votre code promo"
                 />

@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Image, View, Text, TouchableOpacity } from "react-native";
+import { Image, View, Text, TouchableOpacity, Platform } from "react-native";
 
  
 export default function TabsLayout(): JSX.Element {
@@ -12,9 +12,10 @@ export default function TabsLayout(): JSX.Element {
           elevation: 0,
           borderTopWidth: 0,
           shadowOpacity: 0,
-          paddingBottom: 8,
+          paddingBottom: Platform.OS === 'ios' ? 22 : 8,
           paddingTop: 8,
           paddingHorizontal: 16,
+
         },
         headerShown: false,
         tabBarLabel: ({ focused, children }) => {
@@ -120,7 +121,7 @@ export default function TabsLayout(): JSX.Element {
       <Tabs.Screen
         name="special-offers"
         options={{
-          title: "Offres spéciale",
+          title: Platform.OS === "ios" ? "Offres" : "Offres Spéciales",
         }}
       />
       <Tabs.Screen

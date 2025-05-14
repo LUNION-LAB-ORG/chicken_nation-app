@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, Image, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Image, Platform } from "react-native";
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -133,7 +133,9 @@ const AuthWithPhone: React.FC = () => {
         />
         <GradientText className="mt-10">Connexion ou inscription</GradientText>
         <View
-          className={`p-4 mt-16 mb-12 w-full rounded-3xl bg-slate-50 ${
+        style={{ padding: Platform.OS === "ios" ? 22 : 16,borderWidth:1, 
+          borderColor: Platform.OS === "ios" ? "#e2e8f0" : "#fff" }}
+          className={`p-4 mt-16 mb-12 w-full rounded-3xl bg-slate-100 ${
             state.isFocused ? "border-2 border-orange-500" : ""
           }`}
         >
@@ -144,6 +146,7 @@ const AuthWithPhone: React.FC = () => {
             onChangeText={handleInputChange}
             value={state.phone}
             className="font-urbanist-medium"
+          placeholderTextColor={"#9CA3AF"}
             keyboardType="phone-pad"
             autoCapitalize="none"
             autoCorrect={false}
