@@ -16,10 +16,13 @@ export enum OrderType {
 export enum OrderStatus {
   PENDING = 'PENDING',
   CONFIRMED = 'CONFIRMED',
+  ACCEPTED = 'ACCEPTED',
   PREPARING = 'PREPARING',
   READY = 'READY',
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  PICKED_UP = 'PICKED_UP'
 }
 
 // Interface pour un élément de commande
@@ -643,10 +646,12 @@ export const getActiveOrders = (orders: OrderResponse[]): OrderResponse[] => {
   return filterOrdersByStatus(orders, [
     OrderStatus.PENDING,
     OrderStatus.CONFIRMED,
+    OrderStatus.ACCEPTED,
     OrderStatus.PREPARING,
     OrderStatus.READY,
     'PENDING',
     'CONFIRMED',
+    'ACCEPTED',
     'PREPARING',
     'READY'
   ]);

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal } from "react-native";
+import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import CustomStatusBar from "@/components/ui/CustomStatusBar";
@@ -21,6 +21,7 @@ type FilterType = "en_cours" | "termines" | "annuler";
 const statusMapping: Record<string, { text: string; color: string }> = {
   PENDING: { text: "En attente", color: "text-orange-500" },
   CONFIRMED: { text: "Confirmé", color: "text-blue-500" },
+  ACCEPTED: { text: "Accepté", color: "text-blue-500" },
   PREPARING: { text: "En préparation", color: "text-purple-500" },
   READY: { text: "Prêt", color: "text-green-500" },
   DELIVERED: { text: "Livré", color: "text-green-500" },
@@ -39,13 +40,17 @@ const TrackingModal: React.FC<{
 }> = ({ visible, order, onClose }) => {
   const [currentOrder, setCurrentOrder] = useState<OrderResponse | null>(order);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { fetchOrders } = useOrderStore();
 
   // Mettre à jour l'ordre actuel quand l'ordre passé en props change
   useEffect(() => {
-    setCurrentOrder(order);
+    if (order) {
+      console.log('[TrackingModal] Mise à jour de l\'ordre depuis les props:', order.status);
+      setCurrentOrder(order);
+    }
   }, [order]);
 
-  // Rafraîchir l'état de la commande toutes les 10 secondes quand le modal est visible
+  // Rafraîchir l'état de la commande toutes les 5 secondes quand le modal est visible
   useEffect(() => {
     if (!visible || !order?.id) return;
 
@@ -53,22 +58,24 @@ const TrackingModal: React.FC<{
       try {
         setIsRefreshing(true);
         console.log('[TrackingModal] Rafraîchissement du statut de la commande:', order.id);
-        // Récupérer uniquement le statut de la commande
-        const newStatus = await getOrderStatus(order.id);
-        console.log('[TrackingModal] Nouveau statut:', newStatus);
         
-        if (newStatus) {
-          // Mettre à jour uniquement le statut de la commande
-          setCurrentOrder(prev => prev ? { ...prev, status: newStatus as OrderStatus } : null);
+        // Récupérer les détails complets de la commande
+        const updatedOrder = await getOrderById(order.id);
+        console.log('[TrackingModal] Commande mise à jour:', updatedOrder?.status);
+        
+        if (updatedOrder) {
+          setCurrentOrder(updatedOrder);
           
-          // Si la commande est annulée, fermer le modal
-          if (newStatus === 'CANCELLED') {
-            console.log('[TrackingModal] Commande annulée, fermeture du modal');
+          // Si la commande est annulée ou livrée, fermer le modal
+          if (updatedOrder.status === 'CANCELLED' || updatedOrder.status === 'DELIVERED') {
+            console.log('[TrackingModal] Commande terminée, fermeture du modal');
             onClose();
+            // Rafraîchir la liste des commandes
+            await fetchOrders();
           }
         }
       } catch (error) {
-        console.error("[TrackingModal] Erreur lors du rafraîchissement du statut:", error);
+        console.error("[TrackingModal] Erreur lors du rafraîchissement:", error);
       } finally {
         setIsRefreshing(false);
       }
@@ -77,12 +84,46 @@ const TrackingModal: React.FC<{
     // Rafraîchir immédiatement
     refreshOrder();
 
-    // Configurer l'intervalle de rafraîchissement
-    const refreshInterval = setInterval(refreshOrder, 10000);
+    // Configurer l'intervalle de rafraîchissement (toutes les 5 secondes)
+    const refreshInterval = setInterval(refreshOrder, 5000);
 
     // Nettoyer l'intervalle lors de la fermeture du modal
     return () => clearInterval(refreshInterval);
-  }, [visible, order?.id, onClose]);
+  }, [visible, order?.id, onClose, fetchOrders]);
+
+  // Obtenir l'adresse formatée
+  const getFormattedAddress = () => {
+    if (!currentOrder?.address) return "Adresse non disponible";
+    
+    try {
+      // Si l'adresse est une chaîne JSON, la parser
+      if (typeof currentOrder.address === 'string') {
+        const addressData = JSON.parse(currentOrder.address);
+        if (addressData.formattedAddress) {
+          return addressData.formattedAddress;
+        }
+        const parts = [];
+        if (addressData.street) parts.push(addressData.street);
+        if (addressData.city) parts.push(addressData.city);
+        if (addressData.address) parts.push(addressData.address);
+        return parts.join(', ') || "Adresse non disponible";
+      }
+
+      // Si l'adresse est déjà un objet
+      const addressData = currentOrder.address as any;
+      if (addressData.formattedAddress) {
+        return addressData.formattedAddress;
+      }
+      const parts = [];
+      if (addressData.street) parts.push(addressData.street);
+      if (addressData.city) parts.push(addressData.city);
+      if (addressData.address) parts.push(addressData.address);
+      return parts.join(', ') || "Adresse non disponible";
+    } catch (error) {
+      console.error('Erreur lors du formatage de l\'adresse:', error);
+      return "Adresse non disponible";
+    }
+  };
 
   if (!currentOrder) return null;
 
@@ -100,6 +141,12 @@ const TrackingModal: React.FC<{
       icon: require("@/assets/icons/chicken.png")
     },
     { 
+      status: OrderStatus.ACCEPTED, 
+      label: "Commande acceptée",
+      description: "Votre commande a été acceptée par le restaurant",
+      icon: require("@/assets/icons/chicken.png")
+    },
+    { 
       status: OrderStatus.PREPARING, 
       label: "En préparation",
       description: "Votre commande est en cours de préparation",
@@ -110,6 +157,12 @@ const TrackingModal: React.FC<{
       label: "Prêt",
       description: "Votre commande est prête pour la livraison",
       icon: require("@/assets/icons/package_orange.png")
+    },
+    { 
+      status: OrderStatus.PICKED_UP, 
+      label: "En livraison",
+      description: "Votre commande est en cours de livraison",
+      icon: require("@/assets/icons/localisation.png")
     },
     { 
       status: OrderStatus.DELIVERED, 
@@ -258,21 +311,14 @@ const TrackingModal: React.FC<{
             </Text>
             
             {/* Adresse de livraison */}
-            {currentOrder.address && (
-              <View className="mb-3">
-                <Text className="text-sm font-sofia-medium text-gray-500">
-                  Adresse de livraison
-                </Text>
-                <Text className="text-base font-sofia-regular text-gray-900">
-                  {currentOrder.address.address}
-                </Text>
-                {currentOrder.address.details && (
-                  <Text className="text-sm font-sofia-regular text-gray-500">
-                    {currentOrder.address.details}
-                  </Text>
-                )}
-              </View>
-            )}
+            <View className="mb-3">
+              <Text className="text-sm font-sofia-medium text-gray-500">
+                Adresse de livraison
+              </Text>
+              <Text className="text-base font-sofia-regular text-gray-900">
+                {getFormattedAddress()}
+              </Text>
+            </View>
 
             {/* Informations de contact */}
             <View className="mb-3">
@@ -303,11 +349,14 @@ const TrackingModal: React.FC<{
 /**
  * Composant représentant une carte de commande individuelle
  */
-const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
+const OrderCard: React.FC<{ 
+  order: OrderResponse;
+  onOpenTracking: (orderId: string) => void;
+  onCloseTracking: () => void;
+}> = ({ order, onOpenTracking, onCloseTracking }) => {
   const router = useRouter();
   const { fetchOrders } = useOrderStore();
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   
@@ -338,7 +387,15 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
   /**
    * Détermine si la commande est en cours
    */
-  const isPending = [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, 'IN_PROGRESS', 'PICKED_UP'].includes(order.status as OrderStatus);
+  const isPending = [
+    OrderStatus.PENDING, 
+    OrderStatus.CONFIRMED, 
+    OrderStatus.ACCEPTED,
+    OrderStatus.PREPARING, 
+    OrderStatus.READY, 
+    'IN_PROGRESS', 
+    'PICKED_UP'
+  ].includes(order.status as OrderStatus);
 
   /**
    * Extraire le moyen de paiement depuis la note
@@ -494,7 +551,7 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
               </TouchableOpacity>
               <TouchableOpacity 
                 className="flex-1 py-[6px] rounded-full bg-[#F97316]"
-                onPress={() => setShowTrackingModal(true)}
+                onPress={() => onOpenTracking(order.id)}
               >
                 <Text className="text-center text-white font-sofia-medium">
                   Suivie de commande
@@ -552,13 +609,6 @@ const OrderCard: React.FC<{ order: OrderResponse }> = ({ order }) => {
         visible={showErrorModal}
         message="Une erreur est survenue lors de l'annulation de votre commande. Veuillez réessayer ou contacter notre service client."
         onClose={() => setShowErrorModal(false)}
-      />
-
-      {/* Modal de tracking */}
-      <TrackingModal
-        visible={showTrackingModal}
-        order={order}
-        onClose={() => setShowTrackingModal(false)}
       />
     </View>
   );
@@ -629,6 +679,8 @@ const Orders = () => {
   const { orders, fetchOrders, isLoading, error } = useOrderStore();
   const [activeFilter, setActiveFilter] = useState<FilterType>("en_cours");
   const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
 
   // Récupérer l'ID de l'utilisateur connecté
   useEffect(() => {
@@ -647,6 +699,18 @@ const Orders = () => {
     getUserId();
   }, []);
 
+  // Fonction de rafraîchissement des commandes
+  const refreshOrders = async () => {
+    try {
+      setIsRefreshing(true);
+      await fetchOrders(true); // Force le rafraîchissement
+    } catch (error) {
+      console.error("Erreur lors du rafraîchissement des commandes:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Charger les commandes au montage du composant et les rafraîchir automatiquement
   useEffect(() => {
     const loadOrders = async () => {
@@ -656,7 +720,7 @@ const Orders = () => {
           console.error("Pas de token d'accès trouvé");
           return;
         }
-        await fetchOrders();
+        await refreshOrders();
       } catch (error) {
         console.error("Erreur lors du chargement des commandes:", error);
       }
@@ -665,8 +729,8 @@ const Orders = () => {
     // Charger les commandes immédiatement
     loadOrders();
 
-    // Configurer l'intervalle de rafraîchissement (toutes les 30 secondes)
-    const refreshInterval = setInterval(loadOrders, 30000);
+    // Configurer l'intervalle de rafraîchissement (toutes les 15 secondes)
+    const refreshInterval = setInterval(refreshOrders, 15000);
 
     // Nettoyer l'intervalle lors du démontage du composant
     return () => clearInterval(refreshInterval);
@@ -688,7 +752,18 @@ const Orders = () => {
     // Ensuite filtrer par statut selon le filtre actif
     switch (activeFilter) {
       case "en_cours":
-        return getActiveOrders(userOrders);
+        // Inclure tous les statuts actifs, y compris PICKED_UP
+        return userOrders.filter(order => 
+          [
+            OrderStatus.PENDING,
+            OrderStatus.CONFIRMED,
+            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY,
+            OrderStatus.PICKED_UP,
+            'IN_PROGRESS'
+          ].includes(order.status as OrderStatus)
+        );
       case "termines":
         return getCompletedOrders(userOrders);
       case "annuler":
@@ -697,6 +772,12 @@ const Orders = () => {
         return userOrders;
     }
   }, [orders, activeFilter, currentUserId]);
+
+  // Trouver la commande en cours de tracking
+  const trackingOrder = useMemo(() => {
+    if (!trackingOrderId) return null;
+    return orders.find(order => order.id === trackingOrderId);
+  }, [orders, trackingOrderId]);
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -784,15 +865,28 @@ const Orders = () => {
         </View>
       )}
 
-      {/* Liste des commandes */}
+      {/* Liste des commandes avec pull-to-refresh */}
       {!isLoading && !error && (
         <ScrollView
           className="flex-1 px-4 pt-4"
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={refreshOrders}
+              colors={["#F97316"]}
+              tintColor="#F97316"
+            />
+          }
         >
           {filteredOrders.length > 0 ? (
             filteredOrders.map((order) => (
-              <OrderCard key={order.id} order={order} />
+              <OrderCard 
+                key={order.id} 
+                order={order} 
+                onOpenTracking={(orderId) => setTrackingOrderId(orderId)}
+                onCloseTracking={() => setTrackingOrderId(null)}
+              />
             ))
           ) : (
             <EmptyState activeFilter={activeFilter} />
@@ -800,6 +894,13 @@ const Orders = () => {
           <View className="h-20" />
         </ScrollView>
       )}
+
+      {/* Modal de tracking */}
+      <TrackingModal
+        visible={!!trackingOrderId}
+        order={trackingOrder}
+        onClose={() => setTrackingOrderId(null)}
+      />
     </View>
   );
 };
