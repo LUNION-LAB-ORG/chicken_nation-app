@@ -417,15 +417,15 @@ const Reserver = () => {
             {currentStep === 1 ? "Annuler" : "Retour"}
           </Text>
         </TouchableOpacity>
-        <GradientButton 
+        <TouchableOpacity 
           onPress={handleNext} 
-          className="flex-1 ml-2"
+          style={styles.continueButton}
           disabled={currentStep === 1 && !selectedRestaurant}
         >
           <Text style={{ color: "white" }}>
             {currentStep === 1 ? "Suivant" : "Suivant"}
           </Text>
-        </GradientButton>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -497,6 +497,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 14,
+  },
+  continueButton: {
+    flex: 1,
+    marginRight: 8, 
+    backgroundColor: "#F17922",
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 14,
+     
   },
   cancelButtonText: {
     color: "#F17922",

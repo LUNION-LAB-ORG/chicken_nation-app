@@ -149,7 +149,7 @@ const RestaurantsList: React.FC = () => {
                 <TouchableOpacity activeOpacity={0.7}>
                   <GradientButton
                     onPress={() => handleRestaurantClick(restaurant.id)}
-                    className="items-center justify-center "
+                  
                   >
                     <View className="flex-row flex items-center">
                       <Image

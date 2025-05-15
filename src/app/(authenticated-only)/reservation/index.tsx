@@ -50,7 +50,7 @@ const ReservationScreen = () => {
           onPress={() =>
             router.push("/(authenticated-only)/reservation/reserver")
           }
-          className="w-full"
+          
         >
           Suivant
         </GradientButton>
