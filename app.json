@@ -70,15 +70,22 @@
       }
     },
     "ios": {
-      "splash": {
-        "image": "./src/assets/icons/logo.png",
-        "resizeMode": "contain",
-        "backgroundColor": "#FFFFFF"
-      },
-      "config": {
-        "googleMapsApiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY"
-      }
-    },
+  "splash": {
+    "image": "./src/assets/icons/logo.png",
+    "resizeMode": "contain",
+    "backgroundColor": "#FFFFFF"
+  },
+  "config": {
+    "googleMapsApiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY"
+  },
+  "infoPlist": {
+    "NSAppTransportSecurity": {
+      "NSAllowsArbitraryLoads": true
+    }
+  }
+}
+,
+
     "name": "chicken-nation",
     "slug": "chicken-nation",
     "version": "1.0.0",

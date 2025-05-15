@@ -24,10 +24,7 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
 import useOrderTypeStore, { OrderType } from "@/store/orderTypeStore";
 
-/**
- * Écran d'accueil pour les utilisateurs invités
- * Affiche la bannière d'accueil, la barre de recherche, la localisation et les catégories
- */
+ 
 const Home: React.FC = () => {
   // Animation values
   const scrollY = useSharedValue(0);

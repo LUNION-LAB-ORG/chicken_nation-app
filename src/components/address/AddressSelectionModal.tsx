@@ -13,7 +13,8 @@ import {
   Image,
   Platform,
   KeyboardAvoidingView,
-  Alert
+  Alert,
+  Linking
 } from 'react-native';
 import { X, MapPin, Search } from "lucide-react-native";
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
@@ -50,6 +51,8 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
   const [addressTitle, setAddressTitle] = useState<string>("");
   const [mapReady, setMapReady] = useState<boolean>(false);
   const [searchFocused, setSearchFocused] = useState<boolean>(false);
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<string | null>(null);
+  const [isLocationEnabled, setIsLocationEnabled] = useState<boolean>(false);
 
   // Store
   const { setCoordinates, setAddressDetails, setLocationType } = useLocationStore();
@@ -57,7 +60,7 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
   // Effects
   useEffect(() => {
     if (visible) {
-      getCurrentLocation();
+      checkLocationPermissions();
       setIsMovingMarker(false);
       setSearchFocused(false);
     }
@@ -80,6 +83,62 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
       keyboardDidHideListener.remove();
     };
   }, [visible]);
+
+  // Vérifier les permissions de localisation
+  const checkLocationPermissions = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Vérifier si la localisation est activée
+      const locationEnabled = await Location.hasServicesEnabledAsync();
+      setIsLocationEnabled(locationEnabled);
+
+      if (!locationEnabled) {
+        Alert.alert(
+          "Localisation désactivée",
+          "Veuillez activer la localisation pour utiliser cette fonctionnalité.",
+          [
+            { text: "Annuler", onPress: onClose, style: "cancel" },
+            { 
+              text: "Paramètres", 
+              onPress: () => Linking.openSettings() 
+            }
+          ]
+        );
+        return;
+      }
+
+      // Vérifier les permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermissionStatus(status);
+
+      if (status !== 'granted') {
+        Alert.alert(
+          "Permission requise",
+          "L'accès à votre position est nécessaire pour utiliser cette fonctionnalité.",
+          [
+            { text: "Annuler", onPress: onClose, style: "cancel" },
+            { 
+              text: "Paramètres", 
+              onPress: () => Linking.openSettings() 
+            }
+          ]
+        );
+        return;
+      }
+
+      // Si tout est OK, récupérer la position
+      await getCurrentLocation();
+    } catch (error) {
+      console.error('Erreur lors de la vérification des permissions:', error);
+      Alert.alert(
+        "Erreur",
+        "Une erreur est survenue lors de la vérification des permissions de localisation."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Get current location
   const getCurrentLocation = async () => {
@@ -373,137 +432,163 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
           <View style={styles.headerRight} />
         </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <GooglePlacesAutocomplete
-            ref={googlePlacesRef}
-            placeholder="Rechercher une adresse..."
-            onPress={handleLocationSelect}
-            textInputProps={{
-              onFocus: () => setSearchFocused(true),
-              onBlur: () => setSearchFocused(false),
-            }}
-            query={{
-              key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
-              language: 'fr',
-              components: 'country:ci',
-            }}
-            styles={{
-              container: styles.placesContainer,
-              textInputContainer: styles.placesInputContainer,
-              textInput: styles.placesInput,
-              listView: styles.placesList,
-              row: styles.placesRow,
-              description: styles.placesDescription,
-              separator: styles.placesSeparator,
-              poweredContainer: { display: 'none' },
-            }}
-            enablePoweredByContainer={false}
-            fetchDetails={true}
-            onFail={error => console.error(error)}
-            renderLeftButton={() => (
-              <View style={styles.searchIconContainer}>
-                <Search size={18} color="#666" />
-              </View>
-            )}
-            renderRow={(data) => (
-              <View style={styles.searchResultRow}>
-                <View style={styles.searchResultIcon}>
-                  <MapPin size={16} color="#666" />
-                </View>
-                <View style={styles.searchResultTextContainer}>
-                  <Text style={styles.searchResultMainText}>
-                    {data.structured_formatting?.main_text || data.description}
-                  </Text>
-                  <Text style={styles.searchResultSecondaryText}>
-                    {data.structured_formatting?.secondary_text || ''}
-                  </Text>
-                </View>
-              </View>
-            )}
-            listViewDisplayed={searchFocused}
-            keyboardShouldPersistTaps="handled"
-          />
-        </View>
-
-        {/* Map */}
-        <View style={styles.mapContainer}>
-          {selectedLocation && (
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              onMapReady={() => setMapReady(true)}
-              initialRegion={{
-                ...selectedLocation,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005,
-              }}
-              onPress={handleMapPress}
-            >
-              <Marker coordinate={selectedLocation}>
-                <Image
-                  source={require("../../assets/icons/changelocation.png")}
-                  style={{ width: 34, height: 32, resizeMode: "contain" }}
-                />
-              </Marker>
-            </MapView>
-          )}
-
-          {/* Move marker button */}
-          <TouchableOpacity
-            style={[
-              styles.moveButton,
-              isMovingMarker && styles.moveButtonActive
-            ]}
-            onPress={toggleMarkerMovement}
-          >
-            <Text style={styles.moveButtonText}>
-              {isMovingMarker ? "Terminer" : "Déplacer le marqueur"}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Center marker button */}
-          <TouchableOpacity
-            style={styles.centerButton}
-            onPress={centerMapOnMarker}
-          >
-            <MapPin size={20} color="#FF6B00" />
-          </TouchableOpacity>
-
-          {/* Help banner */}
-          {isMovingMarker && (
-            <View style={styles.helpBanner}>
-              <Text style={styles.helpText}>
-                Appuyez sur la carte pour déplacer le marqueur
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Form */}
-        <View style={styles.formContainer}>
-       
-          <Text style={styles.addressText} numberOfLines={2}>
-            {addressText || "Sélectionnez un emplacement sur la carte"}
-          </Text>
-          
-          <TouchableOpacity
-            style={styles.confirmButton}
-            onPress={handleConfirmLocation}
-            disabled={!selectedLocation}
-          >
-            <Text style={styles.confirmButtonText}>
-              Confirmer cette adresse
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Loading Indicator */}
-        {isLoading && (
+        {/* État de chargement ou message d'erreur */}
+        {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#F17922" />
+            <ActivityIndicator size="large" color="#F97316" />
+            <Text style={styles.loadingText}>Vérification des permissions...</Text>
           </View>
+        ) : !isLocationEnabled ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>
+              La localisation est désactivée sur votre appareil.
+            </Text>
+            <TouchableOpacity 
+              style={styles.settingsButton}
+              onPress={() => Linking.openSettings()}
+            >
+              <Text style={styles.settingsButtonText}>Ouvrir les paramètres</Text>
+            </TouchableOpacity>
+          </View>
+        ) : locationPermissionStatus !== 'granted' ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>
+              L'accès à votre position est nécessaire.
+            </Text>
+            <TouchableOpacity 
+              style={styles.settingsButton}
+              onPress={() => Linking.openSettings()}
+            >
+              <Text style={styles.settingsButtonText}>Ouvrir les paramètres</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+              <GooglePlacesAutocomplete
+                ref={googlePlacesRef}
+                placeholder="Rechercher une adresse..."
+                onPress={handleLocationSelect}
+                textInputProps={{
+                  onFocus: () => setSearchFocused(true),
+                  onBlur: () => setSearchFocused(false),
+                }}
+                query={{
+                  key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
+                  language: 'fr',
+                  components: 'country:ci',
+                }}
+                styles={{
+                  container: styles.placesContainer,
+                  textInputContainer: styles.placesInputContainer,
+                  textInput: styles.placesInput,
+                  listView: styles.placesList,
+                  row: styles.placesRow,
+                  description: styles.placesDescription,
+                  separator: styles.placesSeparator,
+                  poweredContainer: { display: 'none' },
+                }}
+                enablePoweredByContainer={false}
+                fetchDetails={true}
+                onFail={error => console.error(error)}
+                renderLeftButton={() => (
+                  <View style={styles.searchIconContainer}>
+                    <Search size={18} color="#666" />
+                  </View>
+                )}
+                renderRow={(data) => (
+                  <View style={styles.searchResultRow}>
+                    <View style={styles.searchResultIcon}>
+                      <MapPin size={16} color="#666" />
+                    </View>
+                    <View style={styles.searchResultTextContainer}>
+                      <Text style={styles.searchResultMainText}>
+                        {data.structured_formatting?.main_text || data.description}
+                      </Text>
+                      <Text style={styles.searchResultSecondaryText}>
+                        {data.structured_formatting?.secondary_text || ''}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                listViewDisplayed={searchFocused}
+                keyboardShouldPersistTaps="handled"
+              />
+            </View>
+
+            {/* Map */}
+            <View style={styles.mapContainer}>
+              {selectedLocation && (
+                <MapView
+                  ref={mapRef}
+                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  style={styles.map}
+                  onMapReady={() => setMapReady(true)}
+                  initialRegion={{
+                    ...selectedLocation,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }}
+                  onPress={handleMapPress}
+                >
+                  <Marker coordinate={selectedLocation}>
+                    <Image
+                      source={require("../../assets/icons/changelocation.png")}
+                      style={{ width: 34, height: 32, resizeMode: "contain" }}
+                    />
+                  </Marker>
+                </MapView>
+              )}
+
+              {/* Move marker button */}
+              <TouchableOpacity
+                style={[
+                  styles.moveButton,
+                  isMovingMarker && styles.moveButtonActive
+                ]}
+                onPress={toggleMarkerMovement}
+              >
+                <Text style={styles.moveButtonText}>
+                  {isMovingMarker ? "Terminer" : "Déplacer le marqueur"}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Center marker button */}
+              <TouchableOpacity
+                style={styles.centerButton}
+                onPress={centerMapOnMarker}
+              >
+                <MapPin size={20} color="#FF6B00" />
+              </TouchableOpacity>
+
+              {/* Help banner */}
+              {isMovingMarker && (
+                <View style={styles.helpBanner}>
+                  <Text style={styles.helpText}>
+                    Appuyez sur la carte pour déplacer le marqueur
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Form */}
+            <View style={styles.formContainer}>
+              <Text style={styles.addressText} numberOfLines={2}>
+                {addressText || "Sélectionnez un emplacement sur la carte"}
+              </Text>
+              
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={handleConfirmLocation}
+                disabled={!selectedLocation}
+              >
+                <Text style={styles.confirmButtonText}>
+                  Confirmer cette adresse
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
       </KeyboardAvoidingView>
     </Modal>
@@ -710,10 +795,41 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'white',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    fontFamily: 'SofiaPro-Regular',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'white',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontFamily: 'SofiaPro-Regular',
+  },
+  settingsButton: {
+    backgroundColor: '#F97316',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  settingsButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontFamily: 'SofiaPro-Medium',
   },
 });
 

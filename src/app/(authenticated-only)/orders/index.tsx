@@ -46,7 +46,7 @@ const TrackingModal: React.FC<{
   useEffect(() => {
     if (order) {
       console.log('[TrackingModal] Mise à jour de l\'ordre depuis les props:', order.status);
-      setCurrentOrder(order);
+    setCurrentOrder(order);
     }
   }, [order]);
 
@@ -311,14 +311,14 @@ const TrackingModal: React.FC<{
             </Text>
             
             {/* Adresse de livraison */}
-            <View className="mb-3">
-              <Text className="text-sm font-sofia-medium text-gray-500">
-                Adresse de livraison
-              </Text>
-              <Text className="text-base font-sofia-regular text-gray-900">
+              <View className="mb-3">
+                <Text className="text-sm font-sofia-medium text-gray-500">
+                  Adresse de livraison
+                </Text>
+                <Text className="text-base font-sofia-regular text-gray-900">
                 {getFormattedAddress()}
-              </Text>
-            </View>
+                </Text>
+              </View>
 
             {/* Informations de contact */}
             <View className="mb-3">

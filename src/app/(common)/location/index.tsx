@@ -497,7 +497,7 @@ const Location: React.FC = () => {
         <View style={{ flex: 1 }}>
           <MapView
             ref={mapRef}
-            provider={PROVIDER_GOOGLE}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             style={{ flex: 1 }}
             initialRegion={ABIDJAN_REGION}
             showsUserLocation

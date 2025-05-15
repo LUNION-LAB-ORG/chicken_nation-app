@@ -246,7 +246,7 @@ const EditAddress: React.FC = () => {
               <>
                 <MapView
                   ref={mapRef}
-                  provider={PROVIDER_GOOGLE}
+                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                   style={{ flex: 1 }}
                   initialRegion={{
                     latitude: currentLocation.latitude,

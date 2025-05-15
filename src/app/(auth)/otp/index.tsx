@@ -214,8 +214,9 @@ const OTP: React.FC = () => {
   const renderKeypadButton = (num: KeypadKey): JSX.Element => (
     <TouchableOpacity
       onPress={() => handleNumberPress(num)}
-      className="w-[80px] h-[45px] items-center justify-center"
+      className="w-full h-full items-center justify-center bg-white rounded-xl active:bg-gray-100"
       disabled={state.isVerifying}
+      activeOpacity={0.7}
     >
       <Text className="text-2xl font-urbanist-medium">{num}</Text>
     </TouchableOpacity>
@@ -284,7 +285,7 @@ const OTP: React.FC = () => {
             (num) => (
               <View
                 key={num}
-                className="w-[32%] h-14 mb-1 my-1 justify-center items-center bg-white rounded-xl"
+                className="w-[32%] h-14 mb-1 my-1 rounded-xl overflow-hidden"
                 style={{ elevation: 2 }}
               >
                 {renderKeypadButton(num)}
@@ -295,7 +296,7 @@ const OTP: React.FC = () => {
             <View className="w-[80px] h-[45px]" />
           </View>
           <View
-            className="w-[32%] mt-1 bg-white justify-center items-center rounded-xl"
+            className="w-[32%] mt-1 rounded-xl overflow-hidden"
             style={{ elevation: 2 }}
           >
             {renderKeypadButton("0")}
@@ -303,7 +304,8 @@ const OTP: React.FC = () => {
           <View className="w-[32%] items-center justify-center">
             <TouchableOpacity
               onPress={handleDelete}
-              className="w-[80px] h-[45px] items-center justify-center"
+              className="w-full h-14 items-center justify-center bg-white rounded-xl active:bg-gray-100"
+              activeOpacity={0.7}
             >
               <Image
                 source={require("../../../assets/icons/delete.png")}

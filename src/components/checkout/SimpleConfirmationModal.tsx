@@ -47,9 +47,9 @@ const SimpleConfirmationModal: React.FC<SimpleConfirmationModalProps> = ({
                 Annuler
               </Text>
             </TouchableOpacity>
-            <GradientButton
+            <TouchableOpacity
               onPress={onConfirm}
-              className="flex-1"
+              className="flex-1 py-3 rounded-xl   bg-orange-500"
               disabled={isLoading}
             >
               <View className="flex-row items-center justify-center gap-2">
@@ -60,7 +60,7 @@ const SimpleConfirmationModal: React.FC<SimpleConfirmationModalProps> = ({
                   {isLoading ? "Traitement..." : "Confirmer"}
                 </Text>
               </View>
-            </GradientButton>
+            </TouchableOpacity>
           </View>
         </View>
       </View>

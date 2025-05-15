@@ -357,9 +357,17 @@ const Checkout = () => {
     }
   };
 
-  const handleWebViewNavigation = (navState: any) => {
-   
+  const handlePaymentModalClose = () => {
+    // Permettre la fermeture de la WebView
+    setShowPaymentModal(false);
+    
+    // Si le paiement n'est pas confirmé, rester sur l'écran de confirmation
+    if (paymentStatus !== 'success') {
+      setCurrentStep("confirmation");
+    }
+  };
 
+  const handleWebViewNavigation = (navState: any) => {
     // Vérifier si l'URL contient des paramètres de réponse
     if (navState.url.includes('/payment/thank-you')) {
       const url = new URL(navState.url);
@@ -647,73 +655,6 @@ const Checkout = () => {
     }
   };
 
-  const handlePaymentModalClose = async () => {
-    console.log('Modal de paiement fermé');
-    if (paymentStatus === 'pending') {
-      console.log('Vérification des paiements libres...');
-      try {
-        // Récupérer les paiements libres
-        const freePayments = await getFreePayments();
-        console.log('Paiements libres récupérés:', freePayments);
-
-        if (freePayments && freePayments.length > 0) {
-          // Prendre le premier paiement libre
-          const successfulPayment = freePayments[0];
-          console.log('Paiement réussi trouvé:', successfulPayment);
-
-          // Mettre à jour le statut du paiement
-          setPaymentStatus('success');
-          setPaymentId(successfulPayment.id);
-          setShowPaymentModal(false);
-
-          // Créer la commande avec l'ID du paiement
-          if (activeType === OrderType.DELIVERY) {
-            await createDeliveryOrder(
-              locationData?.addressDetails?.formattedAddress || '',
-              user?.first_name + ' ' + user?.last_name || '',
-              user?.phone || '',
-              user?.email || '',
-              undefined,
-              successfulPayment.id
-            );
-          } else if (activeType === OrderType.PICKUP) {
-            await createTakeawayOrder(
-              user?.first_name + ' ' + user?.last_name || '',
-              user?.phone || '',
-              user?.email || '',
-              undefined,
-              successfulPayment.id
-            );
-          } else if (activeType === OrderType.TABLE) {
-            await createTableOrder(
-              user?.first_name + ' ' + user?.last_name || '',
-              user?.email || '',
-              reservationData?.date?.toISOString() || '',
-              reservationData?.time || '',
-              reservationData?.tableType || '',
-              reservationData?.numberOfPeople || 0,
-              undefined,
-              successfulPayment.id
-            );
-          }
-
-          // Passer à l'étape de succès
-          setCurrentStep("success");
-        } else {
-          console.log('Aucun paiement libre trouvé');
-          setPaymentStatus('cancelled');
-          setShowPaymentModal(false);
-          setCurrentStep("payment");
-        }
-      } catch (error) {
-        console.error('Erreur lors de la vérification des paiements:', error);
-        setPaymentStatus('cancelled');
-        setShowPaymentModal(false);
-        setCurrentStep("payment");
-      }
-    }
-  };
-
   const handleConfirmPayment = async () => {
     console.log('🔄 Début du processus de paiement...');
     setShowConfirmationModal(false);
@@ -767,8 +708,8 @@ const Checkout = () => {
           name: fullName
         });
         
-        const url = `https://chicken-nation-dashboard.vercel.app/payment?amount=${paymentAmount}&phone=${phoneNumber}&email=${encodeURIComponent(userData.email)}&name=${encodeURIComponent(fullName)}&token=${token}`;
-        
+        // Construire l'URL de paiement correctement pour iOS
+        const url = `https://chicken-nation-dashboard.vercel.app/payment?amount=${paymentAmount}&phone=${phoneNumber}&email=${userData.email}&name=${fullName}&token=${token}`;
         console.log('URL de paiement:', url);
         
         // Stocker l'URL et afficher le modal
@@ -1046,15 +987,29 @@ const Checkout = () => {
               <WebView
                 source={{ uri: paymentUrl }}
                 style={{ flex: 1 }}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                startInLoadingState={true}
+                scalesPageToFit={true}
                 onNavigationStateChange={handleWebViewNavigation}
                 onError={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
                   console.error('Erreur WebView:', nativeEvent);
+                  Alert.alert(
+                    "Erreur de chargement",
+                    "Une erreur est survenue lors du chargement de la page de paiement. Veuillez réessayer.",
+                    [{ text: "OK", onPress: () => setShowPaymentModal(false) }]
+                  );
                 }}
                 onHttpError={(syntheticEvent) => {
                   const { nativeEvent } = syntheticEvent;
                   console.error('Erreur HTTP WebView:', nativeEvent);
                 }}
+                renderLoading={() => (
+                  <View className="flex-1 items-center justify-center">
+                    <ActivityIndicator size="large" color="#FF6B00" />
+                  </View>
+                )}
               />
             )}
           </View>

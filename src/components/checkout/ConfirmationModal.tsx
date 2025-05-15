@@ -20,7 +20,7 @@ const getPaymentInstructions = (method: PaymentMethod): string => {
       return "Tapez : *155#";
     case "wave":
       return "Rendez-vous dans l'application";
-    case "momo":
+    case "mtn":
       return "Tapez : *155*6*1#";
     case "card":
       return "Validez votre paiement par carte";
@@ -85,7 +85,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               )}
             </View>
 
-            <GradientButton onPress={onConfirm} className="w-full" disabled={isLoading}>
+            <GradientButton onPress={onConfirm}  disabled={isLoading}>
               <View className="flex-row items-center justify-center gap-2">
                 {isLoading ? (
                   <ActivityIndicator color="white" size="small" />
