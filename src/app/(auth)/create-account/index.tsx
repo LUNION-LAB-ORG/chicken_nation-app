@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, Image, ScrollView, Alert, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Image, ScrollView, Alert, Modal, ActivityIndicator, Platform } from 'react-native';
 import React, { useState } from 'react';
 import CustomStatusBar from '@/components/ui/CustomStatusBar';
 import { StatusBar } from 'expo-status-bar';
@@ -336,9 +336,10 @@ const CreateAccount = () => {
         {/* Formulaire */}
         <View className="space-y-4">
           {/* Nom */}
-          <View className="bg-slate-50 rounded-3xl p-4 mb-3">
+          <View className="bg-slate-100 rounded-3xl p-4 mb-3" style={{padding: Platform.OS === "ios" ? 22 : 16}}>
             <TextInput
               placeholder="Nom"
+              placeholderTextColor={"#9CA3AF"}
               value={formData.lastName}
               onChangeText={(text) => handleInputChange('lastName', text)}
               className="font-urbanist-medium"
@@ -346,18 +347,20 @@ const CreateAccount = () => {
           </View>
 
           {/* Prénom */}
-          <View className="bg-slate-50 rounded-3xl p-4 mb-3">
+         <View className="bg-slate-100 rounded-3xl p-4 mb-3" style={{padding: Platform.OS === "ios" ? 22 : 16}}>
             <TextInput
               placeholder="Prénom"
               value={formData.firstName}
               onChangeText={(text) => handleInputChange('firstName', text)}
               className="font-urbanist-medium"
+              placeholderTextColor={"#9CA3AF"}
             />
           </View>
 
           {/* Date de naissance */}
           <TouchableOpacity 
             className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-3"
+            style={{padding: Platform.OS === "ios" ? 22 : 16}}
             onPress={() => setShowDatePicker(true)}
           >
             <TextInput
@@ -365,13 +368,26 @@ const CreateAccount = () => {
               value={formatDate(formData.birthDate)}
               editable={false}
               className="font-urbanist-medium flex-1"
+              placeholderTextColor={"#9CA3AF"}
             />
             <MaterialIcons name="date-range" size={24} color="#334155" />
+            {showDatePicker && (
+              <DateTimePicker
+                value={formData.birthDate || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'default' : 'default'}
+                onChange={handleDateChange}
+                maximumDate={new Date()}
+              />
+            )}
+      
           </TouchableOpacity>
  
 
           {/* Email */}
-          <View className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-3">
+          <View className="bg-slate-50 rounded-3xl p-4 flex-row justify-between items-center mb-6"
+          style={{padding: Platform.OS === "ios" ? 22 : 16}}
+          >
             <TextInput
               placeholder="Email (Optionnel)"
               value={formData.email}
@@ -379,6 +395,7 @@ const CreateAccount = () => {
               keyboardType="email-address"
               autoCapitalize="none"
               className="font-urbanist-medium flex-1"
+              placeholderTextColor={"#9CA3AF"}
             />
             <MaterialIcons name="email" size={24} color="#334155" />
           </View>
@@ -397,24 +414,14 @@ const CreateAccount = () => {
       <View className="mt-4 mb-2">
         <GradientButton 
           onPress={handleContinue} 
-          className="w-full"
+          
           disabled={!formData.firstName || !formData.lastName || !formData.birthDate || isLoading}
         >
           {isLoading ? "Chargement..." : "Continuer"}
         </GradientButton>
       </View>
 
-      {/* DatePicker modal */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={formData.birthDate || new Date()}
-          mode="date"
-          display="default"
-          onChange={handleDateChange}
-          maximumDate={new Date()}
-        />
-      )}
-      
+     
       {/* Modal pour la sélection d'image */}
       <Modal
         visible={showImageModal}

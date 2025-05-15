@@ -13,7 +13,7 @@ interface CartTabBarProps {
 
  
 const CartTabBar: React.FC<CartTabBarProps> = ({ onPress }) => {
-  const { user } = useAuth(); // Récupération du statut d'authentification
+  const { user } = useAuth();  
   const router = useRouter();
 
   const handleNavigateToMenu = () => {

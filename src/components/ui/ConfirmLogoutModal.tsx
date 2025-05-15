@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Platform,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -148,12 +149,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 15,
+
+    paddingVertical: Platform.OS === "ios" ? 6 : 15,
+    paddingHorizontal: Platform.OS === "ios" ? 4 : 1,
   },
   cancelText: {
     color: "#333",
-    fontSize: 18,
     fontFamily: "Urbanist-Bold",
+    fontSize: Platform.OS === "ios" ? 14 : 18,
   },
   confirmButton: {
     flex: 1,
@@ -168,8 +171,9 @@ const styles = StyleSheet.create({
   },
   confirmText: {
     color: "white",
-    fontSize: 18,
+   
     fontFamily: "Urbanist-Bold",
+    fontSize: Platform.OS === "ios" ? 14 : 18,
   },
 });
 

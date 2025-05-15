@@ -12,13 +12,15 @@ import {
   Keyboard,
   Image,
   Platform,
-  KeyboardAvoidingView
+  KeyboardAvoidingView,
+  Alert
 } from 'react-native';
 import { X, MapPin, Search } from "lucide-react-native";
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { PROVIDER_GOOGLE, Marker, Region } from 'react-native-maps';
 import useLocationStore from '@/store/locationStore';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -165,7 +167,7 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
   };
 
   // Handle location select from search
-  const handleLocationSelect = (data: any, details: any) => {
+  const handleLocationSelect = async (data: any, details: any) => {
     if (!details || !details.geometry) return;
     
     const location = {
@@ -184,48 +186,159 @@ const AddressSelectionModalFinal: React.FC<AddressSelectionModalProps> = ({
       }, 1000);
     }
 
-    // Extract address components
-    const addressComponents = details.address_components;
-    const streetNumber = addressComponents?.find((component: any) => 
-      component.types.includes('street_number'))?.long_name || '';
-    const route = addressComponents?.find((component: any) => 
-      component.types.includes('route'))?.long_name || '';
-    const city = addressComponents?.find((component: any) => 
-      component.types.includes('locality'))?.long_name || '';
-    
-    const formattedAddress = details.formatted_address;
-    setAddressText(formattedAddress);
+    try {
+      // Récupérer l'adresse à partir des coordonnées avec plus de détails
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${location.latitude},${location.longitude}&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
+      );
+      const data = await response.json();
 
-    // Suggérer un titre basé sur le nom du lieu ou l'adresse
-    if (details.name && details.name !== formattedAddress) {
-      setAddressTitle(details.name);
-    } else if (route) {
-      setAddressTitle(route);
+      if (data.status === 'OK' && data.results.length > 0) {
+        // Prendre le premier résultat qui n'est pas un plus code
+        const result = data.results.find((r: any) => 
+          !r.formatted_address.match(/\d{2}[A-Z]\d\+[A-Z]{2}\d/)) || data.results[0];
+        
+        const addressComponents = result.address_components;
+        
+        // Extraire les composants de l'adresse dans l'ordre hiérarchique
+        const streetNumber = addressComponents?.find((component: any) => 
+          component.types.includes('street_number'))?.long_name || '';
+        const route = addressComponents?.find((component: any) => 
+          component.types.includes('route'))?.long_name || '';
+        const neighborhood = addressComponents?.find((component: any) => 
+          component.types.includes('neighborhood'))?.long_name || '';
+        const sublocality = addressComponents?.find((component: any) => 
+          component.types.includes('sublocality'))?.long_name || '';
+        const city = addressComponents?.find((component: any) => 
+          component.types.includes('locality'))?.long_name || 'Abidjan';
+        
+        // Construire l'adresse de manière hiérarchique
+        const streetAddress = `${streetNumber} ${route}`.trim();
+        const district = neighborhood || sublocality;
+        
+        // Construire l'adresse complète
+        const addressParts = [];
+        if (streetAddress) addressParts.push(streetAddress);
+        if (district) addressParts.push(district);
+        if (city) addressParts.push(city);
+        
+        const formattedAddress = addressParts.join(', ');
+
+        // Mettre à jour l'adresse affichée
+        setAddressText(formattedAddress);
+
+        // Suggérer un titre basé sur le nom du lieu ou l'adresse
+        if (details.name && details.name !== formattedAddress) {
+          setAddressTitle(details.name);
+        } else if (route) {
+          setAddressTitle(route);
+        }
+
+        // Mettre à jour le store de localisation
+        setCoordinates(location);
+        setLocationType("manual");
+        setAddressDetails({
+          formattedAddress: formattedAddress,
+          title: addressTitle || "Adresse sélectionnée",
+          street: streetAddress,
+          city: city,
+          neighborhood: district,
+          road: route,
+          streetNumber: streetNumber
+        });
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération de l\'adresse:', error);
+      // En cas d'erreur, utiliser l'adresse formatée de base
+      setAddressText(details.formatted_address);
     }
   };
 
   // Handle confirm location
-  const handleConfirmLocation = () => {
+  const handleConfirmLocation = async () => {
     if (!selectedLocation) return;
 
-    // Construction de l'objet adresse complet pour le backend
-    const addressObj = {
-      title: addressTitle || "Adresse sélectionnée",
-      address: addressText,
-      street: addressText.split(',')[0] || '',
-      city: '', // Peut être amélioré si tu as la ville dans l'adresseText ou ailleurs
-      longitude: selectedLocation.longitude,
-      latitude: selectedLocation.latitude,
-      note: '',
-      formattedAddress: addressText,
-      addressId: "selected"
-    };
+    try {
+      // Récupérer l'adresse à partir des coordonnées avec plus de détails
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${selectedLocation.latitude},${selectedLocation.longitude}&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
+      );
+      const data = await response.json();
 
-    setCoordinates(selectedLocation);
-    setLocationType("manual");
-    setAddressDetails(addressObj as any);
-    onAddressSelected();
-    onClose();
+      if (data.status === 'OK' && data.results.length > 0) {
+        // Prendre le premier résultat qui n'est pas un plus code
+        const result = data.results.find((r: any) => 
+          !r.formatted_address.match(/\d{2}[A-Z]\d\+[A-Z]{2}\d/)) || data.results[0];
+        
+        const addressComponents = result.address_components;
+        
+        // Extraire les composants de l'adresse dans l'ordre hiérarchique
+        const streetNumber = addressComponents?.find((component: any) => 
+          component.types.includes('street_number'))?.long_name || '';
+        const route = addressComponents?.find((component: any) => 
+          component.types.includes('route'))?.long_name || '';
+        const neighborhood = addressComponents?.find((component: any) => 
+          component.types.includes('neighborhood'))?.long_name || '';
+        const sublocality = addressComponents?.find((component: any) => 
+          component.types.includes('sublocality'))?.long_name || '';
+        const city = addressComponents?.find((component: any) => 
+          component.types.includes('locality'))?.long_name || 'Abidjan';
+        
+        // Construire l'adresse de manière hiérarchique
+        const streetAddress = `${streetNumber} ${route}`.trim();
+        const district = neighborhood || sublocality;
+        
+        // Construire l'adresse complète
+        const addressParts = [];
+        if (streetAddress) addressParts.push(streetAddress);
+        if (district) addressParts.push(district);
+        if (city) addressParts.push(city);
+        
+        const formattedAddress = addressParts.join(', ');
+
+        // Construction de l'objet adresse complet pour le backend
+        const addressObj = {
+          title: addressTitle || "Adresse sélectionnée",
+          address: formattedAddress,
+          street: streetAddress,
+          city: city,
+          longitude: selectedLocation.longitude,
+          latitude: selectedLocation.latitude,
+          note: '',
+          formattedAddress: formattedAddress,
+          addressId: "selected",
+          neighborhood: district,
+          road: route,
+          streetNumber: streetNumber
+        };
+
+        // Mettre à jour le store de localisation
+        await setCoordinates(selectedLocation);
+        await setLocationType("manual");
+        await setAddressDetails(addressObj as any);
+
+        // Sauvegarder dans AsyncStorage pour la persistance
+        try {
+          await AsyncStorage.setItem('userLocation', JSON.stringify({
+            type: 'manual',
+            coordinates: selectedLocation,
+            addressDetails: addressObj
+          }));
+        } catch (storageError) {
+          console.error("Erreur lors de la sauvegarde dans AsyncStorage:", storageError);
+        }
+
+        onAddressSelected();
+        onClose();
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération de l\'adresse:', error);
+      Alert.alert(
+        'Erreur',
+        'Une erreur est survenue lors de la récupération de l\'adresse',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   // Center map on marker

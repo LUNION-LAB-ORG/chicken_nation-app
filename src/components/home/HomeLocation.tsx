@@ -8,27 +8,55 @@ import useLocationStore from "@/store/locationStore";
  * Affiche et gère la location actuelle dans l'en-tête de l'application
  */
 const HomeLocation: React.FC = () => {
-  const { addressDetails, getFormattedAddress } = useLocationStore();
+  const { addressDetails, locationType } = useLocationStore();
   const [displayAddress, setDisplayAddress] = useState<string>("Localisation actuelle");
   const locationIcon = require("../../assets/icons/localisation.png");
 
-  // Rafraîchir les données de localisation uniquement quand l'adresse change
+  // Rafraîchir les données de localisation quand l'adresse change ou quand l'écran est focus
+  useFocusEffect(
+    React.useCallback(() => {
+      updateDisplayAddress();
+    }, [addressDetails])
+  );
+
+  // Effet pour le débogage
   useEffect(() => {
-    updateDisplayAddress();
-  }, [addressDetails]);
+    console.log('HomeLocation - addressDetails:', addressDetails);
+    console.log('HomeLocation - locationType:', locationType);
+  }, [addressDetails, locationType]);
 
   /**
    * Formate et met à jour l'adresse à afficher
    */
   const updateDisplayAddress = (): void => {
-    const address = getFormattedAddress();
+    console.log('updateDisplayAddress called with:', addressDetails);
     
-    // Tronquer l'adresse si elle est trop longue
-    const MAX_LENGTH = 35;
-    if (address.length > MAX_LENGTH) {
-      setDisplayAddress(address.substring(0, MAX_LENGTH - 3) + "...");
+    // Si nous avons une adresse définie dans le store, l'utiliser
+    if (addressDetails?.formattedAddress) {
+      const address = addressDetails.formattedAddress;
+      console.log('Using formatted address:', address);
+      
+      // Tronquer l'adresse si elle est trop longue
+      const MAX_LENGTH = 35;
+      if (address.length > MAX_LENGTH) {
+        setDisplayAddress(address.substring(0, MAX_LENGTH - 3) + "...");
+      } else {
+        setDisplayAddress(address);
+      }
+    } else if (addressDetails?.address) {
+      // Fallback sur l'adresse simple si formattedAddress n'existe pas
+      console.log('Using simple address:', addressDetails.address);
+      const address = addressDetails.address;
+      const MAX_LENGTH = 35;
+      if (address.length > MAX_LENGTH) {
+        setDisplayAddress(address.substring(0, MAX_LENGTH - 3) + "...");
+      } else {
+        setDisplayAddress(address);
+      }
     } else {
-      setDisplayAddress(address);
+      // Si aucune adresse n'est définie, afficher le message par défaut
+      console.log('No address found, using default message');
+      setDisplayAddress("Localisation actuelle");
     }
   };
 

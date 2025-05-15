@@ -271,7 +271,7 @@ const OTP: React.FC = () => {
           {/* Bouton de validation */}
           <GradientButton
             onPress={() => handleValidateOTP(state.code)}
-            className="mt-[220px]"
+            style={{ marginTop: 50 }}
             disabled={state.code.length !== 4 || state.isVerifying}
           >
             Validation

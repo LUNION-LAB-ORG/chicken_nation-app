@@ -675,7 +675,7 @@ const AccountSettings = () => {
             editable={!loadingProfile}
           />
           {/* Téléphone */}
-          <TextInput
+          {/* <TextInput
             className="bg-gray-50 rounded-2xl p-4 mb-3 text-base font-sofia-medium text-gray-900"
             placeholder="Téléphone"
             value={phone}
@@ -683,7 +683,7 @@ const AccountSettings = () => {
             keyboardType="phone-pad"
             maxLength={16}
             editable={!loadingProfile}
-          />
+          /> */}
         </View>
         <View className="h-8" />
         {/* BOUTON METTRE À JOUR */}

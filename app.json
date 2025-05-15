@@ -65,7 +65,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY&language"
+          "apiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY"
         }
       }
     },
@@ -74,6 +74,9 @@
         "image": "./src/assets/icons/logo.png",
         "resizeMode": "contain",
         "backgroundColor": "#FFFFFF"
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY"
       }
     },
     "name": "chicken-nation",

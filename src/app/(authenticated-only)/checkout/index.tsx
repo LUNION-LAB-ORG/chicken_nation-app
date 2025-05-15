@@ -78,7 +78,9 @@ const Checkout = () => {
   const params = useLocalSearchParams();
   const { items, totalAmount, clearCart } = useCartStore();
   const { locationData } = useLocation();
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
+
+  const token = accessToken;
   
   // Utiliser le nouveau store centralisé au lieu des trois stores séparés
   const { activeType, reservationData, setActiveType, resetReservationData } = useOrderTypeStore();
@@ -765,8 +767,7 @@ const Checkout = () => {
           name: fullName
         });
         
-        // Construction de l'url avec les paramètres
-        const url = `https://chicken-nation-dashboard.vercel.app/payment?amount=${paymentAmount}&phone=${phoneNumber}&email=${encodeURIComponent(userData.email)}&name=${encodeURIComponent(fullName)}`;
+        const url = `https://chicken-nation-dashboard.vercel.app/payment?amount=${paymentAmount}&phone=${phoneNumber}&email=${encodeURIComponent(userData.email)}&name=${encodeURIComponent(fullName)}&token=${token}`;
         
         console.log('URL de paiement:', url);
         

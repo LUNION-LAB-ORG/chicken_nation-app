@@ -14,23 +14,31 @@ const AddAddressTitle = () => {
   const { setCoordinates, setLocationType, setAddressDetails } = useLocation();
 
   const handleSaveAddress = async () => {
-    const coordinates = params.coordinates ? JSON.parse(params.coordinates as string) : null;
-    const formattedAddress = params.formattedAddress as string;
-
     try {
-      // 1. Préparer les données d'adresse pour l'API
-      if (!coordinates) {
-        throw new Error("Coordonnées manquantes");
+      // Récupérer les coordonnées directement des paramètres
+      const latitude = parseFloat(params.latitude as string);
+      const longitude = parseFloat(params.longitude as string);
+
+      // Vérifier que les coordonnées sont valides
+      if (isNaN(latitude) || isNaN(longitude)) {
+        throw new Error("Coordonnées invalides");
       }
 
+      const formattedAddress = params.address as string;
+      const street = params.street as string;
+      const city = params.city as string;
+
+      // 1. Préparer les données d'adresse pour l'API
       const addressData: Address = {
         title: addressTitle || "Adresse",
         address: formattedAddress,
-        street: params.street as string || "",
-        city: params.city as string || "Abidjan",
-        longitude: coordinates.longitude,
-        latitude: coordinates.latitude
+        street: street || formattedAddress,
+        city: city || "Abidjan",
+        longitude: longitude,
+        latitude: latitude
       };
+
+      console.log("Données d'adresse envoyées:", JSON.stringify(addressData, null, 2));
 
       // 2. Enregistrer l'adresse dans la base de données
       const savedAddress = await addUserAddress(addressData);
@@ -40,8 +48,8 @@ const AddAddressTitle = () => {
       }
 
       // 3. Mettre à jour le contexte de localisation local
-      await setCoordinates(coordinates);
-      await setLocationType(params.type as "auto" | "manual");
+      await setCoordinates({ latitude, longitude });
+      await setLocationType("manual");
       await setAddressDetails({
         formattedAddress,
         title: addressTitle || "Adresse",

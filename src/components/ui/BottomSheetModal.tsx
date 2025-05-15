@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import {
@@ -153,8 +154,9 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       style={{ backgroundColor: "#fff" }}
       onRequestClose={onClose}
     >
-      <View className="flex-1 justify-end bg-black/50">
-        <View className="bg-white rounded-t-3xl px-2">
+      <View style={{marginTop: Platform.OS === 'ios' ? 30 : 8,
+}} className="flex-1 justify-end bg-black/50">
+    <View style={{}} className="bg-white rounded-t-3xl px-2">
           {/* En-tête avec bouton de fermeture */}
           <View className="p-6 relative">
             <View className="flex flex-row items-center justify-between">

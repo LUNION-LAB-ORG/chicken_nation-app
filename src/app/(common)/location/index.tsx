@@ -6,6 +6,9 @@ import {
   Alert,
   Text,
   StyleSheet,
+  Keyboard,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import MapView, { PROVIDER_GOOGLE, Marker, Region } from "react-native-maps";
 import * as ExpoLocation from "expo-location";
@@ -18,6 +21,9 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import Spinner from "@/components/ui/Spinner"; 
 import { addUserAddress, Address } from "@/services/api/address";
 import { useAuth } from "@/app/context/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import { Search, MapPin } from "lucide-react-native";
 
 // Structure des coordonnées géographiques
 interface Coordinates {
@@ -35,6 +41,7 @@ const ABIDJAN_REGION: Region = {
 
 const Location: React.FC = () => {
   const mapRef = useRef<MapView | null>(null);
+  const googlePlacesRef = useRef(null);
   const {
     coordinates,
     setCoordinates,
@@ -51,6 +58,7 @@ const Location: React.FC = () => {
   const [addressTitle, setAddressTitle] = useState<string>("");
   const [tempLocationData, setTempLocationData] = useState<any>(null);
   const [isMovingMarker, setIsMovingMarker] = useState<boolean>(false);
+  const [searchFocused, setSearchFocused] = useState<boolean>(false);
   const router = useRouter();
 
   // Mise à jour de la carte quand les coordonnées changent dans le store
@@ -134,10 +142,78 @@ const Location: React.FC = () => {
   };
 
   // Mise à jour de la position après le déplacement du marqueur
-  const handleMarkerDragEnd = (event: {
+  const handleMarkerDragEnd = async (event: {
     nativeEvent: { coordinate: Coordinates };
-  }): void => {
-    setCurrentLocation(event.nativeEvent.coordinate);
+  }): Promise<void> => {
+    const newLocation = event.nativeEvent.coordinate;
+    setCurrentLocation(newLocation);
+
+    try {
+      // Récupérer l'adresse à partir des nouvelles coordonnées
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${newLocation.latitude},${newLocation.longitude}&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
+      );
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.results.length > 0) {
+        const result = data.results[0];
+        const addressComponents = result.address_components;
+        
+        // Extraire les composants de l'adresse
+        const streetNumber = addressComponents?.find((component: any) => 
+          component.types.includes('street_number'))?.long_name || '';
+        const route = addressComponents?.find((component: any) => 
+          component.types.includes('route'))?.long_name || '';
+        const neighborhood = addressComponents?.find((component: any) => 
+          component.types.includes('neighborhood'))?.long_name || '';
+        const sublocality = addressComponents?.find((component: any) => 
+          component.types.includes('sublocality'))?.long_name || '';
+        const city = addressComponents?.find((component: any) => 
+          component.types.includes('locality'))?.long_name || 'Abidjan';
+        
+        // Construire l'adresse de manière hiérarchique
+        const streetAddress = `${streetNumber} ${route}`.trim();
+        const district = neighborhood || sublocality;
+        
+        // Construire l'adresse complète
+        const addressParts = [];
+        if (streetAddress) addressParts.push(streetAddress);
+        if (district) addressParts.push(district);
+        if (city) addressParts.push(city);
+        
+        const formattedAddress = addressParts.join(', ') || result.formatted_address;
+
+        // Préparer les données d'adresse
+        const addressData = {
+          formattedAddress: formattedAddress,
+          title: "Adresse sélectionnée",
+          street: streetAddress || route,
+          city: city,
+          neighborhood: district,
+          road: route,
+          streetNumber: streetNumber
+        };
+
+        // Mettre à jour le store de localisation
+        setCoordinates(newLocation);
+        setLocationType("manual");
+        setAddressDetails(addressData);
+
+        // Sauvegarder dans AsyncStorage
+        try {
+          await AsyncStorage.setItem('userLocation', JSON.stringify({
+            type: 'manual',
+            coordinates: newLocation,
+            addressDetails: addressData
+          }));
+          console.log('Adresse mise à jour avec succès dans AsyncStorage');
+        } catch (storageError) {
+          console.error("Erreur lors de la sauvegarde dans AsyncStorage:", storageError);
+        }
+      }
+    } catch (error) {
+      console.error('Erreur lors de la récupération de l\'adresse:', error);
+    }
   };
 
   // Activer/désactiver le mode de déplacement du marqueur
@@ -155,60 +231,77 @@ const Location: React.FC = () => {
   };
 
   // Sauvegarde de la position actuelle avec son adresse
-  const handleUseCurrentLocation = async (): Promise<void> => {
-    if (!currentLocation) {
-      Alert.alert(
-        "Localisation non disponible",
-        "Veuillez sélectionner un point sur la carte.",
-        [{ text: "OK" }],
-      );
-      return;
-    }
+  const handleUseCurrentLocation = async () => {
     try {
       setIsLocating(true);
-      // Utiliser l'API Google Maps pour le geocoding inverse sur la position du marqueur
+
+      // Utiliser la position du marqueur au lieu de la position en temps réel
+      if (!currentLocation) {
+        Alert.alert(
+          'Erreur',
+          'Veuillez d\'abord placer le marqueur sur la carte',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Récupérer l'adresse à partir des coordonnées du marqueur
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${currentLocation.latitude},${currentLocation.longitude}&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY&language=fr`
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${currentLocation.latitude},${currentLocation.longitude}&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
       );
       const data = await response.json();
-      if (data && data.results && data.results.length > 0) {
+
+      if (data.status === 'OK' && data.results.length > 0) {
         const result = data.results[0];
-        const addressComponents = result.address_components;
-        const streetNumber = addressComponents?.find((component: any) => 
-          component.types.includes('street_number'))?.long_name || '';
-        const route = addressComponents?.find((component: any) => 
-          component.types.includes('route'))?.long_name || '';
-        const city = addressComponents?.find((component: any) => 
-          component.types.includes('locality'))?.long_name || '';
-        const addressDetails = {
-          title: route || "Adresse sélectionnée",
-          address: result.formatted_address,
-          street: `${streetNumber} ${route}`.trim(),
-          city: city,
-          longitude: currentLocation.longitude,
-          latitude: currentLocation.latitude,
+        
+        // Utiliser directement les données de l'API
+        const addressData = {
           formattedAddress: result.formatted_address,
-          addressId: "current"
+          title: result.formatted_address,
+          street: result.address_components?.find((component: any) => 
+            component.types.includes('route'))?.long_name || "",
+          city: result.address_components?.find((component: any) => 
+            component.types.includes('locality'))?.long_name || "Abidjan",
+          neighborhood: result.address_components?.find((component: any) => 
+            component.types.includes('neighborhood'))?.long_name || "",
+          road: result.address_components?.find((component: any) => 
+            component.types.includes('route'))?.long_name || "",
+          streetNumber: result.address_components?.find((component: any) => 
+            component.types.includes('street_number'))?.long_name || ""
         };
 
-        // D'abord effacer les données existantes
-        await clearLocationData();
-        
-        // Ensuite mettre à jour avec les nouvelles données
+        console.log("Adresse récupérée:", addressData);
+
+        // D'abord, effacer les données existantes
+        clearLocationData();
+
+        // Ensuite, mettre à jour le store de localisation
         setCoordinates(currentLocation);
-        setLocationType("manual"); // Forcer le type à "manual" pour empêcher les mises à jour automatiques
-        setAddressDetails(addressDetails);
-        
-        router.push("/(tabs-user)");
+        setLocationType("manual");
+        setAddressDetails(addressData);
+
+        // Sauvegarder dans AsyncStorage pour la persistance
+        try {
+          await AsyncStorage.setItem('userLocation', JSON.stringify({
+            type: 'manual',
+            coordinates: currentLocation,
+            addressDetails: addressData
+          }));
+          console.log('Adresse sauvegardée avec succès dans AsyncStorage:', addressData);
+        } catch (storageError) {
+          console.error("Erreur lors de la sauvegarde dans AsyncStorage:", storageError);
+        }
+
+        router.back();
       } else {
-        throw new Error("Impossible de récupérer l'adresse");
+        throw new Error('Impossible de récupérer l\'adresse');
       }
     } catch (error) {
-      console.error("Erreur lors de la récupération de l'adresse:", error);
+      console.error('Erreur lors de la récupération de l\'adresse:', error);
       Alert.alert(
-        "Erreur",
-        "Impossible de récupérer l'adresse. Veuillez réessayer.",
-        [{ text: "OK" }],
+        'Erreur',
+        'Une erreur est survenue lors de la récupération de l\'adresse',
+        [{ text: 'OK' }]
       );
     } finally {
       setIsLocating(false);
@@ -261,21 +354,146 @@ const Location: React.FC = () => {
     router.push("/location/manualset");
   };
 
+  // Handle location select from search
+  const handleLocationSelect = async (data: any, details: any) => {
+    if (!details || !details.geometry) return;
+    
+    const location = {
+      latitude: details.geometry.location.lat,
+      longitude: details.geometry.location.lng,
+    };
+
+    // Mettre à jour la position du marqueur
+    setCurrentLocation(location);
+    setSearchFocused(false);
+    
+    // Animer la carte vers la nouvelle position
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        ...location,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      }, 1000);
+    }
+
+    try {
+      // Utiliser directement les données de l'API Google Places
+      const addressData = {
+        formattedAddress: details.formatted_address || data.description,
+        title: details.name || data.description,
+        street: details.address_components?.find((component: any) => 
+          component.types.includes('route'))?.long_name || "",
+        city: details.address_components?.find((component: any) => 
+          component.types.includes('locality'))?.long_name || "Abidjan",
+        neighborhood: details.address_components?.find((component: any) => 
+          component.types.includes('neighborhood'))?.long_name || "",
+        road: details.address_components?.find((component: any) => 
+          component.types.includes('route'))?.long_name || "",
+        streetNumber: details.address_components?.find((component: any) => 
+          component.types.includes('street_number'))?.long_name || ""
+      };
+
+      console.log("Adresse sélectionnée:", addressData);
+
+      // D'abord, effacer les données existantes
+      clearLocationData();
+
+      // Ensuite, mettre à jour le store de localisation
+      setCoordinates(location);
+      setLocationType("manual");
+      setAddressDetails(addressData);
+
+      // Sauvegarder dans AsyncStorage pour la persistance
+      try {
+        await AsyncStorage.setItem('userLocation', JSON.stringify({
+          type: 'manual',
+          coordinates: location,
+          addressDetails: addressData
+        }));
+        console.log('Adresse sauvegardée avec succès dans AsyncStorage:', addressData);
+      } catch (storageError) {
+        console.error("Erreur lors de la sauvegarde dans AsyncStorage:", storageError);
+      }
+
+      router.back();
+    } catch (error) {
+      console.error('Erreur lors de la récupération de l\'adresse:', error);
+      Alert.alert(
+        'Erreur',
+        'Une erreur est survenue lors de la récupération de l\'adresse',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={{ flex: 1 }}>
         <StatusBar style="dark" />
         <CustomStatusBar />
-       <View className="px-3  mb-3">
-       <View className="flex flex-row items-center justify-between">
-      <TouchableOpacity onPress={() => router.back()}>
-        <Image source={require("../../../assets/icons/arrow-back.png")} style={{ width: 30, height: 30, }} />
-        </TouchableOpacity>
-        <Text className="text-2xl font-sofia-medium">Localisation</Text>
-        <View />
+        <View className="px-3 mb-3">
+          <View className="flex flex-row items-center justify-between">
+            <TouchableOpacity onPress={() => router.back()}>
+              <Image source={require("../../../assets/icons/arrow-back.png")} style={{ width: 30, height: 30, }} />
+            </TouchableOpacity>
+            <Text className="text-2xl font-sofia-medium">Localisation</Text>
+            <View />
+          </View>
         </View>
-       </View>
- 
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <GooglePlacesAutocomplete
+            ref={googlePlacesRef}
+            placeholder="Rechercher une adresse..."
+            onPress={handleLocationSelect}
+            textInputProps={{
+              onFocus: () => setSearchFocused(true),
+              onBlur: () => setSearchFocused(false),
+            }}
+            query={{
+              key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
+              language: 'fr',
+              components: 'country:ci',
+            }}
+            styles={{
+              container: styles.placesContainer,
+              textInputContainer: styles.placesInputContainer,
+              textInput: styles.placesInput,
+              listView: styles.placesList,
+              row: styles.placesRow,
+              description: styles.placesDescription,
+              separator: styles.placesSeparator,
+              poweredContainer: { display: 'none' }
+            }}
+            enablePoweredByContainer={false}
+            fetchDetails={true}
+            onFail={error => console.error(error)}
+            renderLeftButton={() => (
+              <View style={styles.searchIconContainer}>
+                <Search size={18} color="#666" />
+              </View>
+            )}
+            renderRow={(data) => (
+              <View style={styles.searchResultRow}>
+                <View style={styles.searchResultIcon}>
+                  <MapPin size={16} color="#666" />
+                </View>
+                <View style={styles.searchResultTextContainer}>
+                  <Text style={styles.searchResultMainText}>
+                    {data.structured_formatting?.main_text || data.description}
+                  </Text>
+                  <Text style={styles.searchResultSecondaryText}>
+                    {data.structured_formatting?.secondary_text || ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+            listViewDisplayed={searchFocused}
+            keyboardShouldPersistTaps="handled"
+          />
+        </View>
+
         <View style={{ flex: 1 }}>
           <MapView
             ref={mapRef}
@@ -293,7 +511,7 @@ const Location: React.FC = () => {
                 onDragEnd={handleMarkerDragEnd}
               >
                 <Image
-                  source={require("../../../assets/icons/location.png")}
+                  source={require("../../../assets/icons/changelocation.png")}
                   style={{ width: 34, height: 32, resizeMode: "contain" }}
                 />
               </Marker>
@@ -377,6 +595,83 @@ const styles = StyleSheet.create({
   helpText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    zIndex: 10,
+  },
+  placesContainer: {
+    flex: 0,
+  },
+  placesInputContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  placesInput: {
+    height: 44,
+    backgroundColor: 'transparent',
+    fontSize: 16,
+    color: '#1F2937',
+    padding: 0,
+    marginLeft: 8,
+  },
+  placesList: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    maxHeight: 200,
+  },
+  placesRow: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  placesDescription: {
+    fontSize: 14,
+    color: '#1F2937',
+    fontWeight: '400',
+  },
+  placesSeparator: {
+    height: 0,
+  },
+  searchIconContainer: {
+    padding: 8,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  searchResultIcon: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  searchResultTextContainer: {
+    flex: 1,
+  },
+  searchResultMainText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#000',
+  },
+  searchResultSecondaryText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });
 

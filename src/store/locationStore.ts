@@ -23,7 +23,9 @@ export interface AddressDetails {
   doorNumber?: string;
   formattedAddress?: string;
   title?: string;
-  addressId?: string; // ID de l'adresse sélectionnée
+  addressId?: string;
+  street?: string;
+  neighborhood?: string;
 }
 
 /**
@@ -59,58 +61,72 @@ const useLocationStore = create<LocationState>()(
       
       // Définir les coordonnées géographiques
       setCoordinates: (coords) => {
-        const { locationType } = get();
-        // Ne pas mettre à jour les coordonnées si une adresse manuelle est sélectionnée
-        if (locationType === "manual") {
-          console.log("Mise à jour des coordonnées ignorée car une adresse manuelle est sélectionnée");
-          return;
-        }
+        console.log('setCoordinates called with:', coords);
         set({ coordinates: coords });
       },
       
       // Définir les détails d'adresse
-      setAddressDetails: (details) => {
-        const { locationType } = get();
-        // Ne pas mettre à jour l'adresse si une adresse manuelle est sélectionnée
-        if (locationType === "manual") {
-          console.log("Mise à jour de l'adresse ignorée car une adresse manuelle est sélectionnée");
-          return;
-        }
+      setAddressDetails: async (details) => {
+        console.log('setAddressDetails called with:', details);
+        try {
+          // Si nous avons des coordonnées, utiliser l'API Google Geocoding
+          const { coordinates } = get();
+          if (coordinates) {
+            const response = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${coordinates.latitude},${coordinates.longitude}&language=fr&key=AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY`
+            );
+            const data = await response.json();
 
-        // Formater l'adresse si nécessaire
-        if (!details.formattedAddress || details.formattedAddress.trim() === "") {
-          const parts = [];
-          if (details.streetNumber) parts.push(details.streetNumber);
-          if (details.road) parts.push(details.road);
-          if (details.address) parts.push(details.address);
-          if (details.residenceName) parts.push(details.residenceName);
-          if (details.doorNumber) parts.push(`Porte ${details.doorNumber}`);
-
-          const locationParts = [];
-          if (details.city) locationParts.push(details.city);
-          if (details.postalCode) locationParts.push(details.postalCode);
-
-          let formattedAddress = parts.join(", ");
-          if (locationParts.length > 0) {
-            formattedAddress += (formattedAddress ? " - " : "") + locationParts.join(" ");
+            if (data.status === 'OK' && data.results.length > 0) {
+              const result = data.results[0];
+              const addressComponents = result.address_components;
+              
+              // Extraire les composants de l'adresse
+              const streetNumber = addressComponents?.find((component: any) => 
+                component.types.includes('street_number'))?.long_name || '';
+              const route = addressComponents?.find((component: any) => 
+                component.types.includes('route'))?.long_name || '';
+              const city = addressComponents?.find((component: any) => 
+                component.types.includes('locality'))?.long_name || 'Abidjan';
+              const neighborhood = addressComponents?.find((component: any) => 
+                component.types.includes('neighborhood'))?.long_name || '';
+              
+              // Construire une adresse plus propre
+              const streetAddress = `${streetNumber} ${route}`.trim();
+              
+              // Mettre à jour les détails avec l'adresse nettoyée
+              details = {
+                ...details,
+                formattedAddress: streetAddress,
+                street: streetAddress,
+                city: city,
+                neighborhood: neighborhood,
+                road: route,
+                streetNumber: streetNumber
+              };
+            }
           }
 
-          details.formattedAddress = formattedAddress || details.address || "";
-        }
+          // Ne jamais afficher les coordonnées brutes
+          if (
+            details.formattedAddress &&
+            details.formattedAddress.includes("Position:")
+          ) {
+            details.formattedAddress = "Position actuelle";
+          }
 
-        // Ne jamais afficher les coordonnées brutes
-        if (
-          details.formattedAddress &&
-          details.formattedAddress.includes("Position:")
-        ) {
-          details.formattedAddress = "Position actuelle";
+          console.log('Setting address details to:', details);
+          set({ addressDetails: details });
+        } catch (error) {
+          console.error("Erreur lors de la mise à jour de l'adresse:", error);
+          // En cas d'erreur, utiliser les détails fournis tels quels
+          set({ addressDetails: details });
         }
-
-        set({ addressDetails: details });
       },
       
       // Définir le type de localisation
       setLocationType: (type) => {
+        console.log('setLocationType called with:', type);
         set({ locationType: type });
       },
       
@@ -133,40 +149,56 @@ const useLocationStore = create<LocationState>()(
       getFormattedAddress: () => {
         const { addressDetails } = get();
         
-        // Vérifier si nous avons une adresse formatée
-        if (addressDetails?.formattedAddress && 
-            addressDetails.formattedAddress !== "Position actuelle") {
-          // Limiter la longueur de l'adresse formatée pour l'affichage
-          const formattedAddress = addressDetails.formattedAddress;
-          const MAX_LENGTH = 100; // Longueur maximale pour l'adresse
-          
-          if (formattedAddress.length > MAX_LENGTH) {
-            return formattedAddress.substring(0, MAX_LENGTH) + "...";
-          }
-          
-          return formattedAddress;
+        if (!addressDetails) {
+          return "Localisation actuelle";
         }
-        
-        // Essayer de construire une adresse à partir des champs disponibles
-        if (addressDetails) {
-          const parts = [];
-          
-          // Ajouter l'adresse principale si disponible
-          if (addressDetails.address) {
-            parts.push(addressDetails.address);
-          }
-          
-          // Ajouter la ville si disponible
-          if (addressDetails.city) {
-            parts.push(addressDetails.city);
-          }
-          
-          // Si nous avons des parties d'adresse, les joindre
-          if (parts.length > 0) {
-            return parts.join(", ");
+
+        // Construire l'adresse à partir des composants disponibles
+        const parts = [];
+
+        // Ajouter la rue si disponible
+        if (addressDetails.street) {
+          parts.push(addressDetails.street);
+        } else if (addressDetails.road) {
+          // Fallback sur road si street n'est pas disponible
+          if (addressDetails.streetNumber) {
+            parts.push(`${addressDetails.streetNumber} ${addressDetails.road}`);
+          } else {
+            parts.push(addressDetails.road);
           }
         }
-        
+
+        // Ajouter le quartier si disponible
+        if (addressDetails.neighborhood) {
+          parts.push(addressDetails.neighborhood);
+        }
+
+        // Ajouter la ville si disponible
+        if (addressDetails.city) {
+          parts.push(addressDetails.city);
+        }
+
+        // Si nous avons des parties d'adresse, les joindre
+        if (parts.length > 0) {
+          return parts.join(", ");
+        }
+
+        // Si nous avons une adresse formatée brute, l'utiliser
+        if (addressDetails.formattedAddress) {
+          // Nettoyer l'adresse formatée
+          let cleanAddress = addressDetails.formattedAddress
+            .replace(/\d{2}[A-Z]\d\+[A-Z]{2}\d/, '') // Retire les codes postaux comme 72P9+FX8
+            .replace(/\s*,\s*/g, ', ') // Normalise les espaces autour des virgules
+            .replace(/,\s*,/g, ',') // Retire les virgules doubles
+            .replace(/^\s*,\s*/, '') // Retire la virgule au début
+            .replace(/,\s*$/, '') // Retire la virgule à la fin
+            .trim();
+
+          if (cleanAddress) {
+            return cleanAddress;
+          }
+        }
+
         // Si aucune adresse n'est disponible, afficher le message par défaut
         return "Localisation actuelle";
       }

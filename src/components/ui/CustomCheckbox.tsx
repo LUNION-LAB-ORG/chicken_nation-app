@@ -1,5 +1,5 @@
 import React from "react";
-import { TouchableOpacity, View, Text } from "react-native";
+import { TouchableOpacity, View, Text, Platform } from "react-native";
 import { FontAwesome } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -26,7 +26,8 @@ const CustomCheckbox: React.FC<CustomCheckboxProps> = ({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         className="w-8 h-8   items-center justify-center"
-        style={{ borderRadius: 6 }}
+       
+        style={{ borderRadius: 6, padding:  Platform.OS === "ios" ? 8 : 0 }}
       >
         <FontAwesome name="check" size={16} color="white" />
       </LinearGradient>

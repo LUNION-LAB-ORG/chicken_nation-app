@@ -160,11 +160,11 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
       // Préparer les données d'adresse pour le backend
       const addressData: Address = {
         title: addressTitle || "Adresse", // Valeur par défaut si le titre est vide
-        address: formattedAddress, // S'assurer que ce champ n'est jamais vide
-        street: tempFormData.address || formattedAddress, // Utiliser l'adresse formatée comme fallback
+        address: formattedAddress,
+        street: tempFormData.address || formattedAddress,
         city: tempFormData.city || "Abidjan",
-        longitude: -4.0082,
-        latitude: 5.3599
+        longitude: selectedLocation?.longitude || -4.0082,
+        latitude: selectedLocation?.latitude || 5.3599
       };
 
       // Enregistrer l'adresse dans le backend
@@ -275,14 +275,31 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
           latitude: location.lat,
           longitude: location.lng
         };
+        
+        // Vérifier que les coordonnées sont valides
+        if (!coordinates.latitude || !coordinates.longitude) {
+          throw new Error('Coordonnées invalides');
+        }
+
+        console.log('Coordonnées sélectionnées:', coordinates);
+        console.log('Adresse formatée:', formattedAddress);
+
         setSelectedLocation(coordinates);
         setAddressText(formattedAddress);
+        
+        // Extraire la ville de l'adresse formatée
+        const addressParts = formattedAddress.split(',');
+        const city = addressParts[1]?.trim() || 'Abidjan';
+        
+        // Rediriger vers add-title avec les données de l'adresse
         router.push({
-          pathname: '/location',
+          pathname: '/(common)/location/add-title',
           params: {
-            lat: coordinates.latitude,
-            lon: coordinates.longitude,
-            address: formattedAddress
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+            address: formattedAddress,
+            city: city,
+            street: addressParts[0]?.trim() || formattedAddress
           }
         });
       } else {
@@ -326,14 +343,31 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
                   latitude: details.geometry.location.lat,
                   longitude: details.geometry.location.lng,
                 };
+                
+                // Vérifier que les coordonnées sont valides
+                if (!location.latitude || !location.longitude) {
+                  Alert.alert('Erreur', 'Coordonnées invalides');
+                  return;
+                }
+
+                console.log('Coordonnées sélectionnées:', location);
+                console.log('Adresse formatée:', details.formatted_address);
+
                 setSelectedLocation(location);
                 setAddressText(details.formatted_address);
+
+                // Extraire la ville de l'adresse formatée
+                const addressParts = details.formatted_address.split(',');
+                const city = addressParts[1]?.trim() || 'Abidjan';
+
                 router.push({
-                  pathname: '/location',
+                  pathname: '/(common)/location/add-title',
                   params: {
-                    lat: location.latitude,
-                    lon: location.longitude,
-                    address: details.formatted_address
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    address: details.formatted_address,
+                    city: city,
+                    street: addressParts[0]?.trim() || details.formatted_address
                   }
                 });
               }}
@@ -341,22 +375,86 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
                 key: 'AIzaSyDL_YVgedC-WgiLBHuYlZ1MA8Rgl470OBY',
                 language: 'fr',
                 components: 'country:ci',
+                types: ['address', 'establishment', 'geocode'],
+                location: '5.3599,-4.0082', // Coordonnées d'Abidjan
+                radius: '50000', // 50km autour d'Abidjan
+                strictbounds: true
               }}
               fetchDetails={true}
               enablePoweredByContainer={false}
               textInputProps={{
                 onFocus: () => setSearchFocused(true),
                 onBlur: () => setSearchFocused(false),
+                placeholderTextColor: '#666',
+                autoCorrect: false,
+                autoCapitalize: 'none',
+                returnKeyType: 'search'
               }}
               styles={{
-                container: { flex: 0, zIndex: 10 },
-                textInputContainer: { backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#eee', marginBottom: 4 },
-                textInput: { height: 44, fontSize: 16, color: '#222' },
-                listView: { backgroundColor: 'white', borderRadius: 8, marginTop: 2 },
-                row: { flexDirection: 'row', alignItems: 'center', padding: 10 },
-                description: { fontSize: 15, color: '#222' },
-                separator: { height: 1, backgroundColor: '#eee' },
-                poweredContainer: { display: 'none' },
+                container: {
+                  flex: 0,
+                  zIndex: 9999,
+                  position: 'relative'
+                },
+                textInputContainer: {
+                  backgroundColor: 'white',
+                  borderTopWidth: 0,
+                  borderBottomWidth: 0,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: '#eee',
+                  marginBottom: 4,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                  elevation: 3
+                },
+                textInput: {
+                  height: 44,
+                  fontSize: 16,
+                  color: '#222',
+                  paddingLeft: 40,
+                  backgroundColor: 'transparent'
+                },
+                listView: {
+                  backgroundColor: 'white',
+                  borderRadius: 8,
+                  marginTop: 2,
+                  borderWidth: 1,
+                  borderColor: '#eee',
+                  position: 'absolute',
+                  top: 45,
+                  left: 0,
+                  right: 0,
+                  zIndex: 9999,
+                  elevation: 3,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4
+                },
+                row: {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 13,
+                  height: 44,
+                  backgroundColor: 'white'
+                },
+                description: {
+                  fontSize: 15,
+                  color: '#222'
+                },
+                separator: {
+                  height: 1,
+                  backgroundColor: '#eee'
+                },
+                poweredContainer: {
+                  display: 'none'
+                },
+                predefinedPlacesDescription: {
+                  color: '#1faadb'
+                }
               }}
               renderLeftButton={() => (
                 <View className="pl-2 justify-center">
@@ -380,6 +478,13 @@ const ManualSetLocation: React.FC = (): JSX.Element => {
               )}
               listViewDisplayed={searchFocused}
               keyboardShouldPersistTaps="handled"
+              minLength={2}
+              debounce={300}
+              nearbyPlacesAPI="GooglePlacesSearch"
+              GooglePlacesDetailsQuery={{
+                fields: 'geometry,formatted_address,address_component',
+                language: 'fr'
+              }}
             />
           </View>
 
