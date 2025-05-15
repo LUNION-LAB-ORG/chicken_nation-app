@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, Image, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView } from "react-native";
 import React, { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -120,67 +120,71 @@ const AuthWithPhone: React.FC = () => {
   };
 
   return (
-    <View className="flex-1 bg-white p-6 relative">
-      <StatusBar style="dark" />
-      <View className="absolute top-0 left-0 right-0">
-        <CustomStatusBar />
-      </View>
-      <View className="flex-1 justify-center items-center">
-        <Image
-          source={require("../../../assets/icons/logo.png")}
-          style={{ width: 140, height: 140, resizeMode: "contain" }}
-          accessibilityLabel="Logo"
-        />
-        <GradientText className="mt-10">Connexion ou inscription</GradientText>
-        <View
-        style={{ padding: Platform.OS === "ios" ? 22 : 16,borderWidth:1, 
-          borderColor: Platform.OS === "ios" ? "#e2e8f0" : "#fff" }}
-          className={`p-4 mt-16 mb-12 w-full rounded-3xl bg-slate-100 ${
-            state.isFocused ? "border-2 border-orange-500" : ""
-          }`}
-        >
-          <TextInput
-            placeholder="Numéro de téléphone (ex: 0707070707)"
-            onFocus={() => setState((prev) => ({ ...prev, isFocused: true }))}
-            onBlur={() => setState((prev) => ({ ...prev, isFocused: false }))}
-            onChangeText={handleInputChange}
-            value={state.phone}
-            className="font-urbanist-medium"
-          placeholderTextColor={"#9CA3AF"}
-            keyboardType="phone-pad"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-white"
+    >
+      <View className="flex-1 bg-white p-6 relative">
+        <StatusBar style="dark" />
+        <View className="absolute top-0 left-0 right-0">
+          <CustomStatusBar />
         </View>
+        <View className="flex-1 justify-center items-center">
+          <Image
+            source={require("../../../assets/icons/logo.png")}
+            style={{ width: 140, height: 140, resizeMode: "contain" }}
+            accessibilityLabel="Logo"
+          />
+          <GradientText className="mt-10">Connexion ou inscription</GradientText>
+          <View
+            style={{ padding: Platform.OS === "ios" ? 22 : 16,borderWidth:1, 
+              borderColor: Platform.OS === "ios" ? "#e2e8f0" : "#fff" }}
+            className={`p-4 mt-16 mb-12 w-full rounded-3xl bg-slate-100 ${
+              state.isFocused ? "border-2 border-orange-500" : ""
+            }`}
+          >
+            <TextInput
+              placeholder="Numéro de téléphone (ex: 0707070707)"
+              onFocus={() => setState((prev) => ({ ...prev, isFocused: true }))}
+              onBlur={() => setState((prev) => ({ ...prev, isFocused: false }))}
+              onChangeText={handleInputChange}
+              value={state.phone}
+              className="font-urbanist-medium"
+              placeholderTextColor={"#9CA3AF"}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
 
-        {state.error && (
-          <Text className="text-red-500 mt-2 font-urbanist-medium">
-            {state.error}
-          </Text>
-        )}
+          {state.error && (
+            <Text className="text-red-500 mt-2 font-urbanist-medium">
+              {state.error}
+            </Text>
+          )}
 
-        <GradientButton
-          onPress={handleLogin}
-          
-          disabled={state.isLoading || !state.phone.trim()}
+          <GradientButton
+            onPress={handleLogin}
+            disabled={state.isLoading || !state.phone.trim()}
+          >
+            {state.isLoading ? "Chargement..." : "Connexion"}
+          </GradientButton>
+        </View>
+        <TouchableOpacity
+          onPress={handleSkip}
+          className="items-center justify-center"
+          disabled={state.isLoading}
         >
-          {state.isLoading ? "Chargement..." : "Connexion"}
-        </GradientButton>
+          <GradientText
+            fontSize={14}
+            fontFamily="Urbanist-Medium"
+            className="mb-4 mt-10"
+          >
+            Ignorer cette étape
+          </GradientText>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        onPress={handleSkip}
-        className="items-center justify-center"
-        disabled={state.isLoading}
-      >
-        <GradientText
-          fontSize={14}
-          fontFamily="Urbanist-Medium"
-          className="mb-4 mt-10"
-        >
-          Ignorer cette étape
-        </GradientText>
-      </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
